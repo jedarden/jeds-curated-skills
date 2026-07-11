@@ -163,6 +163,21 @@ prevent/detect/mitigate classification — no "be more careful" items allowed.
 
 **Usage:** `/postmortem [incident summary | path/to/notes]`
 
+#### `repo-hygiene`
+
+Audit a repository for hygiene debt, with an optional guarded fix mode.
+
+Detects committed build artifacts (`target/`, `node_modules/`, `__pycache__/`, ...),
+tracked files over 5 MB, dead GitHub Actions workflows, README version-badge drift,
+dirty trees and stash pileups, missing `.gitignore` coverage, and suspicious tracked
+files (`.env`, keys — flagged for review, never read). The detection core is a plain
+report-only bash script (`scripts/repo_hygiene.sh --json`) that any agent harness can
+invoke directly — the skill is a thin wrapper that adds a fix mode applying one commit
+per category, strictly limited to `.gitignore` entries, `git rm --cached`, dead
+workflow removal, and badge fixes.
+
+**Usage:** `/repo-hygiene [repo-path] [--fix]`
+
 ## Philosophy
 
 These skills are designed for use in headless agent workflows — they should work without
