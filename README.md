@@ -178,6 +178,21 @@ workflow removal, and badge fixes.
 
 **Usage:** `/repo-hygiene [repo-path] [--fix]`
 
+### Observe
+
+#### `usage-statusline`
+
+A live Claude Code statusline showing session and weekly usage against
+elapsed-time pace, plus a rolling Claude-co-authored commit counter.
+
+Renders each quota window as a percent, a ten-cell bar comparing usage-consumed
+against time-elapsed, and an extrapolated time-to-exhaustion — so you see you're
+overspending before you hit the wall instead of after. Unlike the other skills
+here, it isn't invoked on demand; it installs a `statusLine` command that runs
+on every prompt. See `usage-statusline/README.md` for the full legend.
+
+**Usage:** ask Claude Code to "set up the usage statusline" (see `usage-statusline/SKILL.md`)
+
 ## Philosophy
 
 These skills are designed for use in headless agent workflows — they should work without
