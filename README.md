@@ -55,6 +55,33 @@ Supports greenfield, port, improvement, and integration plan types. Includes a q
 mode, stale-plan runbook, and multi-plan comparison runbook. After the report, offers to
 draft missing sections.
 
+#### `plan-idea-gen`
+
+Wide-then-narrow ideation anchored to a specific plan.md.
+
+Generates a large pool of ideas (default 100) across eight forced-diversity lenses, then
+filters to the top K (default 10) through clustering, harsh triage, crossover hybrids,
+pairwise ranking, and an adversarial kill pass — comparisons, never 1–10 scores. Finalists
+arrive as decision-ready dossiers: pitch, complexity grade, concrete first step, and the
+strongest objection that survived. Every idea — winners and losers alike — lands in a
+per-repo ledger that future runs dedupe against, so the skill compounds per project.
+
+**Usage:** `/plan-idea-gen [plan.md path or repo] [--pool N] [--keep K] [--constraint "..."] [--lens "..."]`
+
+If the target plan is ambiguous it stops and asks rather than guessing. Adopted ideas can
+flow into bead tracking and back into the plan's roadmap.
+
+#### `gap-review`
+
+Iterative gap-and-contradiction review of a plan, spec, or design document.
+
+Fresh-eyes analysis agents hunt contradictions, dangling references, specification gaps,
+and ambiguities that would block implementation. For each gap, a fix agent brainstorms 20
+candidate solutions, ranks them against the document's goal, and applies the best; the
+document is then re-analyzed — looping until a round comes back clean (max 5 rounds).
+
+**Usage:** `/gap-review [path/to/document.md]`
+
 #### `spec-review`
 
 A pre-plan gate: reviews a PRD or requirements doc for ambiguity, untestable requirements,
@@ -177,6 +204,21 @@ per category, strictly limited to `.gitignore` entries, `git rm --cached`, dead
 workflow removal, and badge fixes.
 
 **Usage:** `/repo-hygiene [repo-path] [--fix]`
+
+### Observe
+
+#### `usage-statusline`
+
+A live Claude Code statusline showing session and weekly usage against
+elapsed-time pace, plus a rolling Claude-co-authored commit counter.
+
+Renders each quota window as a percent, a ten-cell bar comparing usage-consumed
+against time-elapsed, and an extrapolated time-to-exhaustion — so you see you're
+overspending before you hit the wall instead of after. Unlike the other skills
+here, it isn't invoked on demand; it installs a `statusLine` command that runs
+on every prompt. See `usage-statusline/README.md` for the full legend.
+
+**Usage:** ask Claude Code to "set up the usage statusline" (see `usage-statusline/SKILL.md`)
 
 ## Philosophy
 
