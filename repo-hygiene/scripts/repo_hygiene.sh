@@ -21,6 +21,9 @@
 #   - .gitignore coverage vs detected language markers
 #   - suspicious tracked files (.env, *.pem, *.key, id_rsa*) — flagged
 #     for human review only; contents are never read
+#   - ad hoc root-level test scripts (test_*.sh, test_*.py, test_*.rs) and
+#     stray compiled binaries (ELF, by magic bytes) tracked directly in the
+#     repo root — legit tests live under tests/; root-level scratch is debt
 #
 # Output: human-readable report, or --json:
 #   {"repo": "...", "findings": [{"category","severity","count","examples":[]}], "clean": bool}
@@ -265,6 +268,36 @@ n=$(count_lines "$WORK/suspicious")
 if [[ $n -gt 0 ]]; then
   add_finding "suspicious-tracked-files" "needs-review" "$n" \
     "$(head -n "$MAX_EXAMPLES" "$WORK/suspicious")"
+fi
+
+# --- Check 8: ad hoc root-level test scripts / stray binaries ---------------
+
+# Root-level (path has no '/') test_*.sh|py|rs are ad hoc scratch files —
+# legit tests live under tests/ (or src/**/tests/). Also flag any compiled
+# binary (ELF, via `file`) tracked directly in root. Both are hygiene debt
+# that tends to regenerate quarter over quarter; this catches it early.
+# Files under tests/, scripts/, src/, etc. carry a '/' and are never matched.
+
+awk '!/\// && /^test_.*\.(sh|py|rs)$/ { print $0 " (ad hoc test script)" }' \
+  "$WORK/tracked" > "$WORK/root_tests"
+
+: > "$WORK/root_bins"
+# Detect compiled ELF binaries by magic bytes (\x7f 'E' 'L' 'F' at offset 0)
+# using head + od (both coreutils) — no `file` dependency, so the check runs
+# everywhere the rest of the script does. Symlinks are followed; text files
+# and short files never match the 8-hex-digit magic 7f454c46.
+while IFS= read -r f; do
+  [[ -z "$f" ]] && continue
+  if [[ "$(head -c 4 "$ROOT/$f" 2>/dev/null | od -An -tx1 | tr -d ' \n')" == "7f454c46" ]]; then
+    echo "$f (ELF binary)" >> "$WORK/root_bins"
+  fi
+done < <(awk '!/\//' "$WORK/tracked")
+
+cat "$WORK/root_tests" "$WORK/root_bins" > "$WORK/scratch"
+n=$(count_lines "$WORK/scratch")
+if [[ $n -gt 0 ]]; then
+  add_finding "root-ad-hoc-files" "medium" "$n" \
+    "$(head -n "$MAX_EXAMPLES" "$WORK/scratch")"
 fi
 
 # --- Output ------------------------------------------------------------------

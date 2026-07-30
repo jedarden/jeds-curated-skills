@@ -44,6 +44,7 @@ Summarize each category with its severity, count, and a few example paths. Categ
 | `dirty-working-tree` / `stash-pileup` | low | uncommitted changes / accumulated stashes |
 | `gitignore-gaps` | medium | language detected (Cargo.toml, package.json, Python sources) but its build dir is not ignored |
 | `suspicious-tracked-files` | needs-review | `.env`, `*.pem`, `*.key`, `id_rsa*` — **never read or print their contents**; flag for the human to decide |
+| `root-ad-hoc-files` | medium | `test_*.sh` / `test_*.py` / `test_*.rs` and ELF binaries tracked **directly in the repo root** — legit tests live under `tests/`; root-level scratch regenerates if unchecked |
 
 ## Step 3: Fix Mode (Only on Explicit `--fix`)
 
