@@ -1,5 +1,6 @@
 ---
 name: plan-review
+version: 1.0.0
 description: >-
   Comprehensive pre-flight review of a software plan document to ensure no in-flight pivots
   are needed. Checks 80+ structural patterns derived from analysis of high-quality plans.

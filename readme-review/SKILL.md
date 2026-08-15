@@ -1,5 +1,6 @@
 ---
 name: readme-review
+version: 1.0.0
 description: >-
   Reviews a project's README and top-level docs against a quality rubric, judged against the
   project type (library / CLI / service / app), then optionally redrafts weak sections. Tests

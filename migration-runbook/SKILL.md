@@ -1,5 +1,6 @@
 ---
 name: migration-runbook
+version: 1.0.0
 description: >-
   Author a reversible cutover/migration runbook — schema migration, data backfill, service
   cutover, or infra move — that a human or agent can execute step-by-step, with a verification

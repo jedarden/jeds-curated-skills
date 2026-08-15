@@ -1,5 +1,6 @@
 ---
 name: threat-model
+version: 1.0.0
 description: >-
   Produce or review a STRIDE-based threat model for a system. Enumerates assets, trust
   boundaries, data flows, and entry points, then walks STRIDE per element to emit a threat

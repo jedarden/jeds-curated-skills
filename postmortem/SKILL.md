@@ -1,5 +1,6 @@
 ---
 name: postmortem
+version: 1.0.0
 description: >-
   Author a blameless incident postmortem from an incident description and any available
   artifacts (logs, timeline notes, chat transcripts), or review an existing draft for

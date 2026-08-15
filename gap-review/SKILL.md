@@ -1,5 +1,6 @@
 ---
 name: gap-review
+version: 1.0.0
 description: >-
   Iteratively review a document for gaps, contradictions, and missing pieces. Spawns agents
   to brainstorm 20 solutions per gap, picks the best, applies fixes, and re-analyzes.

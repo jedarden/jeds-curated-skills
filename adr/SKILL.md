@@ -1,5 +1,6 @@
 ---
 name: adr
+version: 1.0.0
 description: >-
   Author a new Architecture Decision Record or review existing ones for quality. Drafts a
   numbered ADR with steel-manned alternatives and honest consequences, or rates an ADR against

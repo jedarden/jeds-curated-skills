@@ -1,5 +1,6 @@
 ---
 name: diff-review
+version: 1.0.0
 description: >-
   Language-agnostic structural review of a code diff for correctness bugs and design/cleanup
   issues, with an adversarial verification pass that suppresses false positives. Collects the

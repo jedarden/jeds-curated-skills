@@ -235,3 +235,13 @@ on every prompt. See `usage-statusline/README.md` for the full legend.
 These skills are designed for use in headless agent workflows — they should work without
 human steering mid-execution. Each skill is self-contained: it locates its own inputs,
 spawns its own subagents, and produces a complete output.
+
+### Versioning
+
+Each skill has a `version: X.Y.Z` field in its SKILL.md frontmatter and a corresponding
+entry in the root CHANGELOG.md. When a skill's SKILL.md, checklists, or scripts change
+materially (typo fixes excluded), bump its version and add a CHANGELOG entry.
+
+This convention supports drift detection: users with local skill copies can compare their
+version against the upstream CHANGELOG to see whether they're missing changes. The
+drift-checker bead (jcs-3) will eventually report version mismatches automatically.

@@ -1,5 +1,6 @@
 ---
 name: usage-statusline
+version: 1.0.0
 description: >-
   Install a live Claude Code statusline showing 5h session and 7d weekly usage
   against elapsed-time pace, an optional scoped weekly cap, and a rolling count

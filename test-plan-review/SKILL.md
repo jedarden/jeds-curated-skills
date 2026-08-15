@@ -1,5 +1,6 @@
 ---
 name: test-plan-review
+version: 1.0.0
 description: >-
   Suite-level review of an existing test directory or a test-plan document. Finds coverage
   gaps and tests that will lie to you — what isn't being tested, and which tests pass for the

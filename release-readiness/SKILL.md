@@ -1,5 +1,6 @@
 ---
 name: release-readiness
+version: 1.0.0
 description: >-
   Go/no-go gate run before cutting a release, tag, or deploy. Inspects the repository and
   everything changed since the last release, rates each release gate against four checklists,

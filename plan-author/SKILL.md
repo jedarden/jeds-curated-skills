@@ -1,5 +1,6 @@
 ---
 name: plan-author
+version: 1.0.0
 description: >-
   Generate a high-quality plan.md from a short brief or idea. Produces the eleven structural
   categories a plan-review checks for — scope lock, acceptance scenarios, architecture, pre-flight

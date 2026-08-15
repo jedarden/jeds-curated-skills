@@ -1,5 +1,6 @@
 ---
 name: spec-review
+version: 1.0.0
 description: >-
   Pre-plan gate that reviews a product or requirements spec (PRD, requirements doc, feature
   spec) for ambiguity, untestable requirements, and missing non-functional considerations

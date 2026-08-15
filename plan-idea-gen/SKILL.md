@@ -1,5 +1,6 @@
 ---
 name: plan-idea-gen
+version: 1.0.0
 description: >-
   Generate a large pool of ideas (default 100) for a project anchored to its plan.md, then
   ruthlessly filter to the top K (default 10) via lens-forced generation, clustering,

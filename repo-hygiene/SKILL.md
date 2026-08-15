@@ -1,5 +1,6 @@
 ---
 name: repo-hygiene
+version: 1.0.0
 description: >-
   Audit a repository for hygiene debt — committed build artifacts, dead GitHub Actions
   workflows, README version drift, dirty working trees, stash pileups, missing .gitignore

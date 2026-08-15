@@ -1,5 +1,6 @@
 ---
 name: api-design-review
+version: 1.0.0
 description: >-
   Reviews an API surface — REST/OpenAPI, gRPC/proto, GraphQL schema, or CLI — for design
   quality and evolvability before it is locked. Rates resource modeling, method semantics,
