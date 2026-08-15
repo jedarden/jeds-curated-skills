@@ -4,17 +4,27 @@ A collection of Claude Code skills for agent-driven software development workflo
 
 ## Installation
 
-Clone directly to your Claude Code skills directory:
+Use the included installer to select which skills to install:
+
+```bash
+# Clone the repository
+git clone https://github.com/jedarden/jeds-curated-skills ~/jeds-curated-skills
+
+# List available skills
+cd ~/jeds-curated-skills
+./install.sh --list
+
+# Install specific skills (doesn't touch other skills already in ~/.claude/skills/)
+./install.sh plan-review repo-hygiene
+
+# Install everything
+./install.sh --all
+```
+
+**Or** clone directly to your Claude Code skills directory (overwrites existing skills):
 
 ```bash
 git clone https://github.com/jedarden/jeds-curated-skills ~/.claude/skills
-```
-
-Or install a single skill alongside existing ones:
-
-```bash
-git clone https://github.com/jedarden/jeds-curated-skills /tmp/jeds-curated-skills
-cp -r /tmp/jeds-curated-skills/plan-review ~/.claude/skills/
 ```
 
 ## Skills
