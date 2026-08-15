@@ -27,6 +27,38 @@ cd ~/jeds-curated-skills
 git clone https://github.com/jedarden/jeds-curated-skills ~/.claude/skills
 ```
 
+## Checking for drift
+
+Skills are distributed by `cp -r` into `~/.claude/skills/` with no automatic update or drift-detection mechanism. If you edit skills locally or update the repo, installed copies can silently diverge from the canonical source.
+
+To check for drift between installed skills and the repo:
+
+```bash
+cd ~/jeds-curated-skills
+./scripts/check-installed.sh
+```
+
+This checks all skills present in both the repo and `~/.claude/skills/`, reporting any files that differ or are missing on either side.
+
+To check specific skills only:
+
+```bash
+./scripts/check-installed.sh plan-review repo-hygiene usage-statusline
+```
+
+**Exit codes:**
+- `0` — No drift found
+- `1` — Drift detected
+- `2` — Usage error or `~/.claude/skills/` directory not found
+
+To fix drift, re-copy the skill from the repo:
+
+```bash
+cp -r plan-review/ ~/.claude/skills/
+```
+
+The drift checker detects the same issue that motivated this repo's own ADR-1: the installed `~/.claude/usage-statusline.sh` once hardcoded `/home/coding` while the repo's version generalized to `$HOME` — silent drift that went unnoticed until manual inspection.
+
 ## Skills
 
 Each skill is a self-contained, checklist-driven artifact derived from the structural
