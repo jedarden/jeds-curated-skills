@@ -236,6 +236,13 @@ These skills are designed for use in headless agent workflows — they should wo
 human steering mid-execution. Each skill is self-contained: it locates its own inputs,
 spawns its own subagents, and produces a complete output.
 
+### Lifecycle Flow
+
+The skills cover the complete agent-driven development lifecycle from spec through
+release. See [docs/notes/lifecycle.md](docs/notes/lifecycle.md) for the full SDLC map
+showing when to invoke each skill, including branch points for spec vs. brief entry and
+different plan types.
+
 ### Versioning
 
 Each skill has a `version: X.Y.Z` field in its SKILL.md frontmatter and a corresponding
