@@ -84,18 +84,26 @@ draft against a completeness bar and backfills any thin sections before writing 
 
 #### `plan-review`
 
-Pre-flight review of a software plan document before implementation begins.
+Pre-flight review of a software plan that hunts for the decisions an implementer will be
+forced to make that the plan has not made — and proposes each one — so the plan itself is the
+decision record and no ADRs are needed mid-build.
 
-Checks 80+ structural patterns across scope, acceptance criteria, architecture, safety,
-phasing, testing, security, performance, operations, API design, and risk — derived from
-analysis of high-quality planning documents. Catches the gaps that cause mid-implementation
-pivots before any worker touches the code.
+Five lenses, run inline in one context: a **decision ledger** (every fork classified
+LOCKED / ASSERTED / RECOMMENDED / SPIKED / DEFERRED / UNNOTICED / SHADOW, each open one
+resolved with *Decision / Because / Rejected / Enforced by / Revisit if*), an **implementer
+dry run** that narrates the first files a worker would create and the first question they
+cannot answer, a **reality check** of the plan's claims against the actual repo and cluster,
+seven **safety caps** (any one ⇒ NOT READY — there are no percentages), and a compact,
+applicability-aware **structural sweep** as the safety net. The output is a memo written next
+to the plan: verdict first, then "Decide these now".
 
-**Usage:** `/plan-review [path/to/plan.md]`
+**Usage:** `/plan-review [path/to/plan.md]` · `--fast` for a five-minute caps-and-forks check ·
+`--lock DN-1,DN-3` (or `--lock all`) to write accepted decisions into the plan where an
+implementer will read them.
 
-Supports greenfield, port, improvement, and integration plan types. Includes a quick triage
-mode, stale-plan runbook, and multi-plan comparison runbook. After the report, offers to
-draft missing sections.
+Handles greenfield, port, improvement, integration, migration/cutover, and spike plans.
+`scripts/find-forks.sh` is a line-anchored locator for deferred, hedged, shadowed, amended, and
+unquantified decisions.
 
 #### `plan-idea-gen`
 

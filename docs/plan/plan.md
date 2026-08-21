@@ -170,3 +170,45 @@ this ADR).
 - **Reversal trigger:** if the false-positive rate on reference-integrity checks turns out high
   enough to make contributors bypass the hook routinely, narrow the check (e.g. checklist-file
   references only, drop the general link-scan) rather than removing the harness outright.
+
+## ADR-2: 2026-08-20 — plan-review 2.0: a decision ledger replaces the header checklist
+
+- **Status:** Accepted
+- **Date:** 2026-08-20
+
+**Decision: `plan-review` reviews a plan by the decisions it has not made, not by the section
+headers it has.** The 83-item PRESENT / PARTIAL / MISSING checklist and its percentage score
+are replaced by a decision ledger (every fork an implementer will hit, classified LOCKED /
+ASSERTED / RECOMMENDED / SPIKED / DEFERRED / UNNOTICED / SHADOW, each open one resolved with
+*Decision / Because / Rejected / Enforced by / Revisit if*), an implementer dry run, a reality
+check against the real repo, seven safety caps, and a demoted, N/A-aware structural sweep. A
+`--lock` mode writes accepted decisions into the plan's home sections. It runs inline.
+
+**Because:** the header checklist measured the wrong thing. In this workspace 42 of 80
+`plan.md` files carry ADRs, nearly all appended in the last 3–20 % of the file *after* the plan
+had passed review; one plan scored "88 % present, 0 missing, READY" while its implementation
+language was undecided and its first phase sat blocked for five days; another cached "every
+2xx forever" with no staleness rule, which became a nine-day silent-staleness incident and two
+contradictory ADRs. Every one of those ADRs is a fork the plan should have chosen. A corpus of
+~340 planning documents shows the strongest plans rarely write standalone ADRs — they lock
+decisions inline (Problem → Options → Decision → stop-ship Test), park open questions with a
+recommended default and an answer plan, and turn un-armchair-able choices into dated spikes.
+
+**Rejected:** (a) keeping the checklist and adding a "decisions" category — the percentage would
+still reward length and still call an undecided plan READY; (b) a separate `decision-review`
+skill — it splits one judgement across two contexts, and this workspace's own runs show
+subagent fan-out costs ~67k tokens per agent with no quality gain; (c) grading with the
+corpus's 100-point rubric — better than the checklist, but still a score, and scores invite
+"88 %".
+
+**Enforced by:** `plan-review/SELF-TEST.md` fixture with pinned `find-forks.sh` counts;
+`scripts/validate-skills.sh` (frontmatter, references, syntax) on every commit via the
+pre-commit hook; the functional-test invariant that the plan file is unmodified after a review
+pass and modified only at a fork's home section after `--lock`.
+
+**Revisit if:** a reviewed plan still spawns an ADR during implementation for a fork the
+ledger catalog already contains — that is a catalog gap, fix `DECISION-LEDGER.md`; or if the
+ledger's proposals are routinely rejected by humans — that is a taste gap, fix `EXEMPLARS.md`.
+Either way it is a two-way door: the 1.0 bundle is one `git show <sha>:plan-review/` away, and
+a tarball of the installed 1.0 copy was kept at
+`~/.claude/backups/skills-plan-review-1.0.0-20260820-2335.tgz` before the install.

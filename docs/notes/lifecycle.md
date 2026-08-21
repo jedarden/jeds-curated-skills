@@ -43,12 +43,14 @@ brief → /plan-author → plan-review → [implementation]
 
 ### 2. Plan Type Handling
 
-The `plan-author` and `plan-review` skills handle all four plan types:
+The `plan-author` and `plan-review` skills handle these plan types:
 
 - **Greenfield:** New project from scratch
 - **Port:** Rewrite/translation of existing codebase to new stack
 - **Improvement:** Feature addition or refactor of existing system
 - **Integration:** System integration or connector work
+- **Migration / Cutover** (`plan-review` only): moving data, users, or traffic — judged on backup, rollback trigger, idempotency, shadow period
+- **Spike** (`plan-review` only): a plan whose deliverable is a *decision* — judged on question, metrics, environment, time box, default if inconclusive
 
 The skills auto-detect plan type from context or prompt.
 
@@ -60,7 +62,7 @@ The skills auto-detect plan type from context or prompt.
 |-------|-------|----------------|
 | **Spec Review** | `spec-review` | You have a PRD or requirements doc; run before writing plan |
 | **Plan Authoring** | `plan-author` | Converting brief/idea to full plan.md |
-| **Plan Review** | `plan-review` | Pre-flight check of plan.md before implementation starts |
+| **Plan Review** | `plan-review` | Pre-flight check of plan.md before implementation or bead decomposition; produces a decision ledger and a `--lock` path that writes accepted decisions into the plan |
 | **Gap Analysis** | `gap-review` | Iterative gap/contradiction review of plan, spec, or design doc |
 | **Idea Generation** | `plan-idea-gen` | Need large pool of ideas anchored to a specific plan.md |
 
@@ -91,7 +93,7 @@ The skills auto-detect plan type from context or prompt.
 
 | Skill | When to Invoke |
 |-------|----------------|
-| **ADR** | When architectural decisions need to be recorded or reviewed |
+| **ADR** | For a decision that genuinely arises *after* the plan is locked. An ADR written during implementation is a signal that `plan-review` missed a fork — fold the decision back into `plan.md` with `/plan-review --lock`; the ADR becomes history, not the record |
 | **README Review** | When README changes; ensure docs match project state |
 | **Repo Hygiene** | Audit repository for hygiene debt (committed artifacts, large files, dead workflows) |
 | **Usage Statusline** | Install once for live Claude Code usage tracking |
@@ -177,7 +179,7 @@ These skills can be invoked at any time, independent of the main lifecycle flow:
 
 ## Notes
 
-- All skills are self-contained and spawn their own subagents
+- Skills are self-contained. Most spawn their own subagents; `plan-review` (2.0) deliberately runs inline so its ledger, dry run, and proposed decisions share one context
 - Skills work headlessly — no human steering required mid-execution
 - Skills auto-detect project type, plan type, and context from repo state
 - Run skills in sequence as shown; each produces artifacts the next can consume

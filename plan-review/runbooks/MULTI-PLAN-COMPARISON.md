@@ -1,78 +1,45 @@
-# Runbook: Multi-Plan Comparison
+# Runbook: comparing two plans for one system
 
-Use when comparing two plans for the same project (e.g., Opus vs. GPT version,
-v1 vs. v2, or two competing architectural approaches).
-
----
-
-## Context
-
-Multiple plans for the same system surface design disagreements and coverage gaps
-that neither plan alone would reveal. The comparison is more valuable than reviewing either alone.
-
----
+Two drafts (two models, v1 vs. v2, two architectures) disagree in ways neither reveals alone.
+Compare the **ledgers**, not the headers: where the plans *decide differently* is where the
+design risk is; where they agree is the strongest signal either is right.
 
 ## Process
 
-### Step 1: Run Score on Both Plans
+1. **Build a ledger for each** (SKILL.md Step 3), using the same fork numbering from
+   `references/DECISION-LEDGER.md` so rows align.
+2. **Join on fork.** For each fork: A's state and choice · B's state and choice.
+3. **Classify each row:**
+   - **Agree, both LOCKED** — high confidence; carry into the merged plan as is.
+   - **Agree on choice, one has rationale** — take the locked one's text.
+   - **Disagree** — the real design question. Write a DN with *both* choices as options
+     (Form 2) and propose one, with the reason the other loses.
+   - **Only one noticed the fork** — take it; note that the other plan was silent.
+   - **Neither noticed** — UNNOTICED in both; propose from the catalog.
+4. **Caps for each** — a plan that trips a cap loses that section regardless of polish.
+5. **Synthesis:** section by section, which plan's treatment survives, and the DN list the
+   merged plan still carries.
 
-```bash
-~/.claude/skills/plan-review/scripts/score-plan.sh plan-a.md
-~/.claude/skills/plan-review/scripts/score-plan.sh plan-b.md
+## Output
+
+```markdown
+## Plan comparison: <A> vs <B>
+
+Caps: A — none · B — C3 (no first slice)
+
+| Fork | A | B | Take | Why |
+|---|---|---|---|---|
+| 1.1 language | LOCKED Go | LOCKED Go | A | same choice; A has rationale + fallback |
+| 2.2 storage | ASSERTED SQLite | LOCKED Postgres | **DN-1** | genuine disagreement; propose SQLite — single writer, §6.3 |
+| 2.7 staleness | — | LOCKED per-shape TTL | B | A silent |
+| 6.1 first slice | LOCKED | MISSING | A | B trips C3 |
+
+### Decisions the merged plan still needs
+DN-1 … (Form 1 proposal)
+
+### Synthesis
+Take from A: §§1–3, 6, 9. Take from B: §7 data model, staleness rule. Draft new: rollback (neither had it).
 ```
 
-### Step 2: Header Diff
-
-```bash
-~/.claude/skills/plan-review/scripts/scan-headers.sh plan-a.md > /tmp/headers-a.txt
-~/.claude/skills/plan-review/scripts/scan-headers.sh plan-b.md > /tmp/headers-b.txt
-diff /tmp/headers-a.txt /tmp/headers-b.txt
-```
-
-### Step 3: Identify Unique Coverage in Each
-
-- What does Plan A address that Plan B ignores?
-- What does Plan B address that Plan A ignores?
-- Where do they contradict each other?
-- Where do they agree (strong signal — these decisions are likely correct)?
-
-### Step 4: Extract the Best of Both
-
-For each section category, determine which plan's treatment is better:
-- More specific? More actionable? More realistic?
-
-### Step 5: Produce Synthesis Recommendation
-
-Output a merged section list: "take section X from Plan A, section Y from Plan B,
-draft new section Z because neither covered it."
-
----
-
-## Output Format
-
-```
-## Multi-Plan Comparison: [Plan A] vs [Plan B]
-
-### Scores
-- Plan A: N/M (N%)
-- Plan B: N/M (N%)
-
-### Unique to Plan A (missing from Plan B)
-- ...
-
-### Unique to Plan B (missing from Plan A)
-- ...
-
-### Contradictions (must resolve)
-1. [Topic]: Plan A says X, Plan B says Y — Recommendation: [which to follow and why]
-...
-
-### Agreement (high confidence decisions)
-- ...
-
-### Synthesis Recommendation
-For a merged plan:
-- Take from Plan A: [sections]
-- Take from Plan B: [sections]
-- Draft new: [sections neither covered]
-```
+Header diffs (`scan-headers.sh` on both) are a useful *locator* for sections one plan lacks,
+but a section present in both can still decide nothing — the ledger is the comparison.

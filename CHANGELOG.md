@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
 
+### Changed
+- **plan-review 2.0.0** (2026-08-20) — rewritten around a *decision ledger* instead of an
+  83-item header checklist. Motivation: plans were passing review at "88% present" while
+  their implementation language, cache-staleness rule, or registry target was still
+  undecided; those decisions then surfaced as ADRs appended after the plan was "done", or as
+  production incidents. The review now asks what the implementer will be forced to decide
+  that the plan has not — and proposes each decision.
+  - New: `references/DECISION-LEDGER.md` (fork catalog, with the incident each open fork
+    becomes), `references/STRUCTURAL-SWEEP.md` (the eleven categories plus port /
+    improvement / integration / migration / spike, consolidated, N/A-aware),
+    `references/EXEMPLARS.md` (locked-decision forms and anti-patterns), `runbooks/LOCK.md`
+    (`--lock` writes decisions into their home sections), `runbooks/FAST-PATH.md`,
+    `scripts/find-forks.sh` (line-anchored locator: DEFER / HEDGE / SHADOW / AMENDED /
+    UNQUANTIFIED).
+  - Verdict is NOT READY / READY AFTER DECISIONS (n) / READY, driven by seven safety caps.
+    No percentages.
+  - Runs inline; `Agent` removed from `allowed-tools`. The memo is written to
+    `docs/notes/plan-review-<date>.md` (or next to the plan) before it is summarised.
+  - Removed: `CHECKLIST-01..11.md`, `TYPE-*.md`, `subagents/`, `runbooks/QUICK-TRIAGE.md`,
+    `runbooks/STALE-PLAN.md` (folded into the reality lens), `references/PIVOT-CAUSES.md`
+    and `references/HIGH-QUALITY-EXAMPLES.md` (folded into the ledger and exemplars).
+  - Deprecated: `scripts/score-plan.sh` is no longer referenced — its READY / NOT READY
+    output rewarded length. Retained until bead `jedscura-abeab37c` (shared-lib extraction)
+    lands, then removed.
+
 ## [1.0.0] - 2026-05-16 to 2026-07-25
 
 ### Added
