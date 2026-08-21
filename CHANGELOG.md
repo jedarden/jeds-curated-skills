@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
 
 ### Changed
+- **gap-review → plan-gap-review 2.0.0** (2026-08-21) — renamed. Major bump because the
+  rename breaks the invocation: `/gap-review` no longer resolves. The skill's behaviour is
+  unchanged. The new name states what the skill is actually for — reviewing a plan, spec, or
+  design document — rather than reading as a generic "find gaps in anything", and it groups
+  with the other plan-lifecycle skills (`plan-author`, `plan-review`, `plan-idea-gen`).
+  - Callers must update `/gap-review` to `/plan-gap-review`.
 - **plan-review 2.0.0** (2026-08-20) — rewritten around a *decision ledger* instead of an
   83-item header checklist. Motivation: plans were passing review at "88% present" while
   their implementation language, cache-staleness rule, or registry target was still

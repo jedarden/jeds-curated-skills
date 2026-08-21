@@ -121,7 +121,7 @@ per-repo ledger that future runs dedupe against, so the skill compounds per proj
 If the target plan is ambiguous it stops and asks rather than guessing. Adopted ideas can
 flow into bead tracking and back into the plan's roadmap.
 
-#### `gap-review`
+#### `plan-gap-review`
 
 Iterative gap-and-contradiction review of a plan, spec, or design document.
 
@@ -130,7 +130,7 @@ and ambiguities that would block implementation. For each gap, a fix agent brain
 candidate solutions, ranks them against the document's goal, and applies the best; the
 document is then re-analyzed — looping until a round comes back clean (max 5 rounds).
 
-**Usage:** `/gap-review [path/to/document.md]`
+**Usage:** `/plan-gap-review [path/to/document.md]`
 
 #### `spec-review`
 

@@ -63,7 +63,7 @@ The skills auto-detect plan type from context or prompt.
 | **Spec Review** | `spec-review` | You have a PRD or requirements doc; run before writing plan |
 | **Plan Authoring** | `plan-author` | Converting brief/idea to full plan.md |
 | **Plan Review** | `plan-review` | Pre-flight check of plan.md before implementation or bead decomposition; produces a decision ledger and a `--lock` path that writes accepted decisions into the plan |
-| **Gap Analysis** | `gap-review` | Iterative gap/contradiction review of plan, spec, or design doc |
+| **Gap Analysis** | `plan-gap-review` | Iterative gap/contradiction review of plan, spec, or design doc |
 | **Idea Generation** | `plan-idea-gen` | Need large pool of ideas anchored to a specific plan.md |
 
 ### Implementation Phase
@@ -171,7 +171,7 @@ The skills auto-detect plan type from context or prompt.
 
 These skills can be invoked at any time, independent of the main lifecycle flow:
 
-- **Gap Review:** Run `/gap-review` on any plan, spec, or design document when you need fresh-eyes contradiction/ambiguity analysis
+- **Gap Review:** Run `/plan-gap-review` on any plan, spec, or design document when you need fresh-eyes contradiction/ambiguity analysis
 - **Idea Generation:** Run `/plan-idea-gen` when you need a large pool of candidate ideas for a specific plan
 - **Migration Planning:** Run `/migration-runbook` whenever you need a reversible migration plan
 - **Repo Hygiene:** Run `/repo-hygiene` periodically to detect and fix technical debt

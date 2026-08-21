@@ -1,6 +1,6 @@
 ---
-name: gap-review
-version: 1.0.0
+name: plan-gap-review
+version: 2.0.0
 description: >-
   Iteratively review a document for gaps, contradictions, and missing pieces. Spawns agents
   to brainstorm 20 solutions per gap, picks the best, applies fixes, and re-analyzes.
@@ -9,7 +9,7 @@ argument-hint: "[path/to/document.md]"
 allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, TaskCreate, TaskUpdate, TaskList, TaskGet, AskUserQuestion
 ---
 
-# Gap Review Skill
+# Plan Gap Review Skill
 
 Iteratively analyze a document for gaps, contradictions, inconsistencies, and missing pieces. For each gap found, brainstorm 20 solutions and apply the best one. Re-analyze after fixes until clean.
 
