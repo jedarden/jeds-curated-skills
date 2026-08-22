@@ -60,7 +60,49 @@ install_skill() {
 
     # Copy skill directory
     cp -r "$src_dir" "$dest_dir"
+
+    # Inline lib/common.sh into scripts that source it
+    inline_lib_common "$dest_dir"
+
     echo -e "${GREEN}  → Installed to $dest_dir${NC}"
+}
+
+# Inline lib/common.sh into scripts that source it
+# This makes installed scripts self-contained (no dependency on ../../lib/)
+inline_lib_common() {
+    local skill_dir="$1"
+    local lib_common="$SCRIPT_DIR/lib/common.sh"
+
+    # Check if lib/common.sh exists
+    if [[ ! -f "$lib_common" ]]; then
+        return 0
+    fi
+
+    # Find all .sh files in the skill directory
+    while IFS= read -r script; do
+        # Check if script sources ../../lib/common.sh
+        if grep -qF '../../lib/common.sh' "$script"; then
+            # Create a temporary file
+            local tmp_file
+            tmp_file=$(mktemp)
+
+            # Copy script up to (but not including) the source line
+            awk '/source.*..\/..\/lib\/common\.sh/{exit} 1' "$script" > "$tmp_file"
+
+            # Add a marker comment
+            echo '# --- Inlined from lib/common.sh during install ---' >> "$tmp_file"
+
+            # Append lib/common.sh content (skip shebang, blank lines, and comments at start)
+            # Keep everything from 'set -euo pipefail' to the end
+            awk 'f; /^set -euo pipefail/{f=1}' "$lib_common" >> "$tmp_file"
+
+            # Append the rest of the script after the source line
+            awk 'f; /source.*..\/..\/lib\/common\.sh/{f=1; next}' "$script" >> "$tmp_file"
+
+            # Replace original script with inlined version
+            mv "$tmp_file" "$script"
+        fi
+    done < <(find "$skill_dir" -type f -name "*.sh")
 }
 
 # Show usage

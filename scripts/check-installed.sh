@@ -67,8 +67,32 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
   echo "Checking $skill..."
 
   # Use diff -r to compare, filtering out expected differences
-  # Ignore: .beads/ (repo tracking), .git/ (if present), and .claude/ (local config)
+  # Ignore: .beads/ (repo tracking), .git/ (if present), .claude/ (local config)
+  # Also ignore lib/common.sh inlining differences in scripts
   drift_output=$(diff -r --brief "$repo_dir" "$installed_dir" 2>/dev/null || true)
+
+  # Filter out expected differences from lib/common.sh inlining
+  if [[ -n "$drift_output" ]]; then
+    filtered_output=""
+    while IFS= read -r line; do
+      # Parse diff output to get file paths
+      if [[ "$line" =~ Files\ (.+)\ and\ (.+)\ differ ]]; then
+        repo_file="${BASH_REMATCH[1]}"
+        installed_file="${BASH_REMATCH[2]}"
+
+        # Check if this is a script that sources lib/common.sh in the repo
+        if grep -qF '../../lib/common.sh' "$repo_file" 2>/dev/null; then
+          # Check if the installed version has the inlining marker
+          if grep -qF 'Inlined from lib/common.sh during install' "$installed_file" 2>/dev/null; then
+            # This is expected inlining - skip this difference
+            continue
+          fi
+        fi
+      fi
+      filtered_output="$filtered_output$line"$'\n'
+    done <<< "$drift_output"
+    drift_output="${filtered_output%$'\n'}"
+  fi
 
   if [[ -n "$drift_output" ]]; then
     DRIFT_FOUND=1
