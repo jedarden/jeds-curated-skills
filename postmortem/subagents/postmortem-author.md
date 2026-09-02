@@ -75,10 +75,54 @@ makes the careful behavior unnecessary or automatic.
 Durable, generalizing takeaways — false assumptions exposed, mental models to update,
 patterns to look for elsewhere. Not a restatement of the summary.
 
+### Step 8: Generate CandidateLesson Records
+
+Identify systemic patterns from the incident that should be encoded as reusable rules.
+For each pattern worth codifying, generate a lesson record to `docs/notes/lessons/<lesson-id>.md`
+in the target repository.
+
+**What qualifies for a lesson record:**
+- Missing guardrails that allowed the incident to occur
+- Alerting or detection gaps that delayed response
+- Process weaknesses (unclear ownership, missing documentation, fragile rollback)
+- Any systemic issue that could recur elsewhere
+
+**Lesson ID generation:**
+```
+lesson_id = sha256sum(fingerprint + scope) | cut -c1-16
+```
+This ensures the same failure pattern in the same scope updates the same file.
+
+**Required frontmatter fields:**
+- `id`: The content hash (stable identifier)
+- `failure_fingerprint`: Unique signature (format: `<type>:<component>:<missing-guardrail>`)
+- `evidence_references`: List with postmortem path, logs, tickets
+- `proposed_rule_text`: Verifiable rule to prevent recurrence
+- `proposed_gate_or_hook_change`: Specific automation/hook (if applicable)
+- `scope`: "repo-wide" | "path:<dir>" | "cluster:<name>" | "service:<name>"
+- `expiry`: ISO date or "never"
+- `severity`: "info" | "warn" | "crit"
+- `status`: "candidate" (not yet adopted) | "active" | "expired"
+
+**Evidence references must resolve:**
+- Postmortem path must exist (the file just written)
+- Log file paths must exist (warn if they don't)
+- Ticket IDs must be valid identifiers
+
+**Idempotent behavior:**
+If a lesson with this ID already exists, append new evidence to it rather than overwriting.
+This builds a stronger case over time for the same pattern.
+
 ## Output
 
-Produce the full document following `POSTMORTEM-TEMPLATE.md` exactly — every heading present,
-every section filled (or explicitly marked "unknown — needs follow-up" with a reason).
+1. The full postmortem document following `POSTMORTEM-TEMPLATE.md` exactly — every heading present,
+   every section filled (or explicitly marked "unknown — needs follow-up" with a reason).
+
+2. For each lesson record generated, report:
+   - Lesson file path written
+   - Failure fingerprint captured
+   - Scope and severity
+   - Evidence references validated
 
 ## Constraints
 

@@ -78,7 +78,7 @@ item in `CHECKLIST-QUALITY.md`: **PRESENT / PARTIAL / MISSING**. Pay special att
 
 Fix every PARTIAL and MISSING item before writing the final document.
 
-## Step 6: Write or Report
+## Step 6: Write the Postmortem
 
 **Author mode:** Write the finished postmortem to a file (default
 `POSTMORTEM-<short-slug>.md` in the working directory, or a path the user specified).
@@ -87,3 +87,105 @@ Then report the scorecard and the action-item list.
 **Review mode:** Do not overwrite the user's draft. Report the checklist scorecard,
 the specific blameless-tone violations with suggested rewrites, the analytical gaps,
 and any action items missing an owner/date/type. Offer to apply the fixes.
+
+## Step 7: Emit CandidateLesson Records
+
+**Author mode only:** After the postmortem is written, generate CandidateLesson records
+to capture the reusable learning for future incident prevention.
+
+The postmortem-author agent (from Step 4) will have identified lesson-worthy patterns
+as part of its analysis. It should now write lesson records to the target repository:
+
+**For each pattern identified:**
+1. Generate the lesson ID as `sha256sum(fingerprint + scope) | cut -c1-16`
+2. If the lesson file already exists at `docs/notes/lessons/<id>.md`, skip writing
+   (this makes the operation idempotent — repeated incidents don't create duplicates)
+3. Otherwise, write the lesson file using the template at `templates/lesson.md`
+4. Verify all evidence references resolve before writing
+
+**Lesson records go ONLY to:** `docs/notes/lessons/<lesson-id>.md` in the target repository.
+No lesson file should ever be written elsewhere.
+
+**Report:** Count of lesson records written, their paths, and the fingerprints captured.
+
+### Extract Key Failure Patterns
+
+From the completed postmortem, identify:
+
+1. **Failure fingerprint:** A concise, unique signature of what went wrong
+   - Format: `<failure-type>:<component>:<missing-guardrail>`
+   - Example: `deploy-without-test:payment-service:missing-rollback-plan`
+   - This identifies the pattern that this incident represents
+
+2. **Scope:** Where this lesson applies
+   - `repo-wide` if it's a general process issue
+   - `path:<directory>` if it's specific to a subsystem
+   - `cluster:<name>` if it's cluster-specific
+   - `service:<name>` if it's service-specific
+
+3. **Proposed rule text:** A clear, actionable rule that would prevent recurrence
+   - Must be verifiable (can be checked by automation or review)
+   - Should be specific, not vague
+   - Example: "All production deployments must have a tested rollback plan documented"
+
+4. **Proposed gate or hook change:** Specific automation to enforce the rule
+   - Pre-commit hook, CI gate, deployment guardrail
+   - Be specific about what change and where
+   - Example: "Add pre-deployment check that verifies rollback plan exists in manifest"
+
+5. **Evidence references:** Links to the supporting artifacts
+   - Postmortem file path (required)
+   - Log files, tickets, alert histories (if available)
+   - These must be real, resolvable references
+
+6. **Severity:** Impact tier of this lesson
+   - `info`: Process improvement, low urgency
+   - `warn`: Important gap, should address
+   - `crit`: Serious safety hole, address soon
+
+7. **Expiry:** When this lesson should be revisited
+   - Use ISO 8601 date for time-bound lessons: `2027-12-31`
+   - Use `never` for permanent lessons
+
+### Generate Stable Lesson ID
+
+The lesson ID is a content hash of `failure_fingerprint + scope`. This ensures:
+- The same failure pattern in the same scope updates the same lesson file
+- Repeated incidents strengthen the evidence rather than creating duplicates
+- The ID is deterministic and stable
+
+Generate the hash using SHA-256 of the concatenated string:
+```bash
+echo -n "${failure_fingerprint}${scope}" | sha256sum | cut -c1-16
+```
+
+### Load the Lesson Template
+
+Read `templates/lesson.md` from this skill's directory as the base structure.
+
+### Write the Lesson Record
+
+Write the lesson file to the target repository's `docs/notes/lessons/` directory:
+- Path: `docs/notes/lessons/<lesson-id>.md`
+- If the directory doesn't exist, create it: `mkdir -p docs/notes/lessons/`
+- If a lesson with this ID already exists, append the new evidence to the
+  existing file rather than overwriting it. This builds a stronger case over time.
+
+### Validate Evidence References
+
+Before writing, verify every evidence reference resolves:
+- Postmortem path must exist (or be the file just written)
+- Log file paths must exist (or warn if they don't)
+- Ticket IDs must be valid identifiers (format check only)
+
+### Quality Check
+
+The lesson record is complete only when:
+- All YAML frontmatter fields are populated
+- The ID is the correct hash of fingerprint+scope
+- Every evidence reference resolves to a real file or identifier
+- The proposed rule text is verifiable and specific
+- The scope is appropriate for the lesson
+
+Report the lesson file path and a summary of what was captured (fingerprint,
+scope, severity, expiry).
