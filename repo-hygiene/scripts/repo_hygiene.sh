@@ -200,9 +200,9 @@ Filed by repo-hygiene after fix pass."
     return 1
   fi
 
-  # File the bead with deduplication
+  # File the bead with deduplication (must run from the target repo directory)
   local result
-  result=$($bead_cli create --title "$title" \
+  result=$(cd "$ROOT" && $bead_cli create --title "$title" \
                          --description "$description" \
                          --priority 3 \
                          --label hygiene \
