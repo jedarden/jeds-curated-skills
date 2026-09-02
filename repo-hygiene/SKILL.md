@@ -6,7 +6,7 @@ description: >-
   workflows, README version drift, dirty working trees, stash pileups, missing .gitignore
   coverage, suspicious tracked files — and optionally fix it with one commit per category.
   Use to check, audit, or clean up repo hygiene.
-argument-hint: "[repo-path] [--fix]"
+argument-hint: "[repo-path] [--fix] [--file-beads]"
 allowed-tools: Bash, Read, Edit, Write, Glob, Grep, AskUserQuestion
 ---
 
@@ -27,6 +27,7 @@ Run the core script against the target repo (argument, or the current repo if no
 
 Exit codes: `0` clean, `1` findings, `2` usage error / not a git repo.
 Add `--json` for machine-readable output.
+Add `--file-beads` to file beads for remaining findings after the fix pass.
 
 Run this first **even when the user asked for `--fix`** — fixes are always driven from a
 fresh report.
@@ -78,6 +79,37 @@ non-workflow files from disk, or "fix" suspicious tracked files — those are re
 
 Do not push unless the user asks. Re-run the script after fixing to confirm the
 categories cleared.
+
+## Step 4: File Beads for Remaining Findings
+
+After the fix pass, if findings remain and the repo has a bead store, file them as
+beads for later resolution:
+
+```bash
+~/.claude/skills/repo-hygiene/scripts/repo_hygiene.sh --file-beads [repo-path]
+```
+
+This:
+
+1. Detects the bead CLI backend from `.needle.yaml` (`bead_cli.backend` field):
+   - `bead-rs` → uses `bead` CLI
+   - `bf` → uses `bf` CLI (legacy)
+2. Checks for an existing bead store (`.beads/` directory)
+3. For each remaining finding, creates a bead with:
+   - **Title:** `hygiene: <category>: <short description>`
+   - **Label:** `hygiene`
+   - **Priority:** 3 (normal)
+   - **Unique ref:** `hygiene:<category>:<hash>` for deduplication
+   - **Description:** Full finding details with severity and example
+
+4. **Deduplication:** The `--unique-ref` ensures re-runs don't create duplicate beads.
+   A repeated create returns `EXISTING ID` (or `EXISTING_CLOSED ID` if already resolved).
+
+If the repo has no `.needle.yaml` or no `.beads/` directory, findings are printed but
+no beads are filed — no error, no warning, just a report.
+
+**Never:** write directly under `.beads/`, bypass the configured bead CLI, or file beads
+for a repo without a bead store.
 
 ## Fleet Mode (Cross-Harness)
 

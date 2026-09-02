@@ -6,8 +6,11 @@
 # harness-agnostic core of the repo-hygiene skill — any agent harness
 # (claude-code, opencode, codex, aider, ...) can invoke it directly.
 #
-# Usage: repo_hygiene.sh [--json] [repo-path]
+# Usage: repo_hygiene.sh [--json] [--file-beads] [repo-path]
 #   repo-path defaults to the current directory.
+#   --file-beads: file beads for findings via the repo's bead CLI (determined
+#                 from .needle.yaml). Uses --unique-ref for deduplication so
+#                 re-runs don't create duplicate beads.
 #
 # Checks:
 #   - tracked build artifacts (target/, node_modules/, dist/, build/,
@@ -35,9 +38,12 @@ set -euo pipefail
 
 MAX_EXAMPLES=10
 LARGE_FILE_BYTES=$((5 * 1024 * 1024))
+FILE_BEADS=0
+BEAD_CLI=""
+BEAD_STORE_EXISTS=0
 
 usage() {
-  echo "Usage: repo_hygiene.sh [--json] [repo-path]"
+  echo "Usage: repo_hygiene.sh [--json] [--file-beads] [repo-path]"
   echo "  Report-only repository hygiene audit (default repo-path: .)"
   echo "  Exit: 0 clean, 1 findings, 2 usage/not-a-repo"
 }
@@ -45,11 +51,13 @@ usage() {
 # --- Argument parsing -------------------------------------------------------
 
 JSON=0
+FILE_BEADS=0
 REPO="."
 seen_path=0
 for arg in "$@"; do
   case "$arg" in
     --json) JSON=1 ;;
+    --file-beads) FILE_BEADS=1 ;;
     -h|--help) usage; exit 0 ;;
     -*)
       echo "error: unknown option: $arg" >&2
@@ -105,6 +113,147 @@ count_lines() { # file -> plain integer (portable across wc paddings)
   local n
   n=$(wc -l < "$1")
   echo $((n))
+}
+
+# --- Bead filing functions -----------------------------------------------
+
+detect_bead_backend() { # -> prints "bead-rs", "bf", or "none"
+  if [[ ! -f "$ROOT/.needle.yaml" ]]; then
+    echo "none"
+    return
+  fi
+
+  # Extract the backend value from .needle.yaml
+  local backend
+  backend=$(grep -E '^\s+backend:\s*\S+' "$ROOT/.needle.yaml" | awk '{print $2}' || true)
+
+  case "$backend" in
+    bead-rs) echo "bead-rs" ;;
+    bf) echo "bf" ;;
+    *) echo "none" ;;
+  esac
+}
+
+has_bead_store() { # -> 0 if store exists, 1 otherwise
+  [[ -d "$ROOT/.beads" ]]
+}
+
+generate_hash() { # category, example -> md5 hash for unique ref
+  local category="$1"
+  local example="$2"
+  printf '%s:%s' "$category" "$example" | md5sum | awk '{print $1}'
+}
+
+file_bead() { # category, example, severity
+  local category="$1"
+  local example="$2"
+  local severity="$3"
+
+  local backend
+  backend=$(detect_bead_backend)
+
+  if [[ "$backend" == "none" ]] || ! has_bead_store; then
+    return 1
+  fi
+
+  # Generate a short description from the example (first ~60 chars)
+  local short_desc
+  short_desc=$(printf '%s' "$example" | head -c 60)
+
+  # Generate hash for deduplication
+  local hash
+  hash=$(generate_hash "$category" "$short_desc")
+
+  # Build the unique ref
+  local unique_ref="hygiene:${category}:${hash}"
+
+  # Build the title
+  local title
+  title="hygiene: ${category}: ${short_desc}"
+
+  # Build the description
+  local description
+  description="Hygiene finding: ${category}
+
+Severity: ${severity}
+Example: ${example}
+
+Filed by repo-hygiene after fix pass."
+
+  # Determine which CLI to use
+  local bead_cli
+  if [[ "$backend" == "bead-rs" ]]; then
+    if command -v bead >/dev/null 2>&1; then
+      bead_cli="bead"
+    else
+      echo "Warning: bead-rs backend configured but 'bead' CLI not found" >&2
+      return 1
+    fi
+  elif [[ "$backend" == "bf" ]]; then
+    if command -v bf >/dev/null 2>&1; then
+      bead_cli="bf"
+    else
+      echo "Warning: bf backend configured but 'bf' CLI not found" >&2
+      return 1
+    fi
+  else
+    return 1
+  fi
+
+  # File the bead with deduplication
+  local result
+  result=$($bead_cli create --title "$title" \
+                         --description "$description" \
+                         --priority 3 \
+                         --label hygiene \
+                         --unique-ref "$unique_ref" 2>&1)
+
+  # Check if it was a new bead or an existing one
+  if [[ "$result" =~ EXISTING ]]; then
+    echo "  [existing] $title"
+  elif [[ "$result" =~ EXISTING_CLOSED ]]; then
+    echo "  [closed] $title (already resolved)"
+  else
+    # It's a new bead - extract the ID
+    local bead_id
+    bead_id=$(printf '%s' "$result" | grep -E '^[a-z0-9]+$' || echo "$result")
+    echo "  [created] $title ($bead_id)"
+  fi
+
+  return 0
+}
+
+file_beads_for_findings() { # -> prints filed bead count
+  local filed=0
+  local i line
+
+  for ((i = 0; i < TOTAL; i++)); do
+    local category="${F_CAT[$i]}"
+    local severity="${F_SEV[$i]}"
+    local count="${F_COUNT[$i]}"
+
+    echo "Filing beads for category: $category ($count finding(s))" >&2
+
+    # File a bead for each example (up to MAX_EXAMPLES)
+    local examples_shown=0
+    while IFS= read -r line && [[ $examples_shown -lt $MAX_EXAMPLES ]]; do
+      [[ -z "$line" ]] && continue
+      if file_bead "$category" "$line" "$severity"; then
+        filed=$((filed + 1))
+      fi
+      examples_shown=$((examples_shown + 1))
+    done <<< "${F_EX[$i]}"
+
+    # If there are more findings than examples, file one bead for the remainder
+    if [[ $count -gt $MAX_EXAMPLES ]]; then
+      local remainder_msg="$count total findings (see full report for details)"
+      if file_bead "$category" "$remainder_msg" "$severity"; then
+        filed=$((filed + 1))
+      fi
+    fi
+  done
+
+  echo "$filed"
 }
 
 # --- Gather tracked file list once ------------------------------------------
@@ -364,6 +513,18 @@ if [[ $JSON -eq 1 ]]; then
   emit_json
 else
   emit_human
+fi
+
+# --- File beads for remaining findings (if requested) --------------------
+
+if [[ $FILE_BEADS -eq 1 && $TOTAL -gt 0 ]]; then
+  echo "" >&2
+  echo "Filing beads for remaining findings..." >&2
+
+  filed_count=$(file_beads_for_findings)
+
+  echo "" >&2
+  echo "Filed $filed_count bead(s) for hygiene findings." >&2
 fi
 
 if [[ $TOTAL -gt 0 ]]; then
