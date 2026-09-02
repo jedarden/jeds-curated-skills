@@ -53,3 +53,12 @@ Any PARTIAL or MISSING gets a one-line note and must be fixed before the documen
 - [ ] **1.12 Lessons Generalize**
   Lessons learned are durable takeaways that apply beyond this one incident — not a restated
   summary of what happened.
+
+- [ ] **1.13 CandidateLesson Record Present**
+  A lesson record is written to `docs/notes/lessons/<lesson-id>.md` in the target repository
+  with YAML frontmatter carrying stable id, failure fingerprint, evidence references,
+  proposed rule text, proposed gate or hook change, scope, and expiry.
+
+- [ ] **1.14 Evidence References Resolve**
+  Every evidence reference in the lesson record (postmortem, logs, tickets) resolves to a
+  real file or identifier. No broken references or placeholders.
