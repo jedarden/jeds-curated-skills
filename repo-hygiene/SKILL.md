@@ -103,10 +103,13 @@ This:
    - **Description:** Full finding details with severity and example
 
 4. **Deduplication:** The `--unique-ref` ensures re-runs don't create duplicate beads.
-   A repeated create returns `EXISTING ID` (or `EXISTING_CLOSED ID` if already resolved).
+   A repeated create returns `EXISTING ID` (or `EXISTING_CLOSED ID` if already resolved),
+   reported as `[existing]` / `[closed]` — and a bead closed since the last run is never
+   re-created.
 
-If the repo has no `.needle.yaml` or no `.beads/` directory, findings are printed but
-no beads are filed — no error, no warning, just a report.
+If the repo has no `.needle.yaml` or no `.beads/` directory, findings are printed, a
+one-line notice says filing was skipped, and no beads are filed — no error, and no
+`.beads/` directory is created.
 
 **Never:** write directly under `.beads/`, bypass the configured bead CLI, or file beads
 for a repo without a bead store.

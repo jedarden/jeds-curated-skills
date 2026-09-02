@@ -200,31 +200,46 @@ Filed by repo-hygiene after fix pass."
     return 1
   fi
 
-  # File the bead with deduplication (must run from the target repo directory)
-  local result
+  # File the bead with deduplication (must run from the target repo directory).
+  # `|| rc=$?` keeps a CLI failure from tripping set -e and aborting the whole
+  # audit after the report has already been produced.
+  local result rc=0
   result=$(cd "$ROOT" && $bead_cli create --title "$title" \
                          --description "$description" \
                          --priority 3 \
                          --label hygiene \
-                         --unique-ref "$unique_ref" 2>&1)
+                         --unique-ref "$unique_ref" 2>&1) || rc=$?
 
-  # Check if it was a new bead or an existing one
-  if [[ "$result" =~ EXISTING ]]; then
-    echo "  [existing] $title"
-  elif [[ "$result" =~ EXISTING_CLOSED ]]; then
-    echo "  [closed] $title (already resolved)"
-  else
-    # It's a new bead - extract the ID
-    local bead_id
-    bead_id=$(printf '%s' "$result" | grep -E '^[a-z0-9]+$' || echo "$result")
-    echo "  [created] $title ($bead_id)"
+  if [[ $rc -ne 0 ]]; then
+    echo "  [error] $title — bead create failed: $result" >&2
+    return 1
   fi
 
+  # Check if it was a new bead or an existing one. Status goes to stderr —
+  # file_beads_for_findings runs under a command substitution, so stdout here
+  # would pollute the captured count. EXISTING_CLOSED must be tested first:
+  # it contains the substring EXISTING, so the reverse order would never
+  # reach the closed branch.
+  #
+  # Return codes: 0 = created, 2 = already tracked (existing or closed),
+  # 1 = skipped / failed.
+  if [[ "$result" =~ EXISTING_CLOSED ]]; then
+    echo "  [closed] $title (already resolved)" >&2
+    return 2
+  elif [[ "$result" =~ EXISTING ]]; then
+    echo "  [existing] $title" >&2
+    return 2
+  fi
+
+  # It's a new bead - extract the ID
+  local bead_id
+  bead_id=$(printf '%s' "$result" | grep -E '^[a-z0-9-]+$' || echo "$result")
+  echo "  [created] $title ($bead_id)" >&2
   return 0
 }
 
-file_beads_for_findings() { # -> prints filed bead count
-  local filed=0
+file_beads_for_findings() { # -> prints "<created> <already-tracked>" on stdout
+  local created=0 existing=0
   local i line
 
   for ((i = 0; i < TOTAL; i++)); do
@@ -239,7 +254,9 @@ file_beads_for_findings() { # -> prints filed bead count
     while IFS= read -r line && [[ $examples_shown -lt $MAX_EXAMPLES ]]; do
       [[ -z "$line" ]] && continue
       if file_bead "$category" "$line" "$severity"; then
-        filed=$((filed + 1))
+        created=$((created + 1))
+      elif [[ $? -eq 2 ]]; then
+        existing=$((existing + 1))
       fi
       examples_shown=$((examples_shown + 1))
     done <<< "${F_EX[$i]}"
@@ -248,12 +265,14 @@ file_beads_for_findings() { # -> prints filed bead count
     if [[ $count -gt $MAX_EXAMPLES ]]; then
       local remainder_msg="$count total findings (see full report for details)"
       if file_bead "$category" "$remainder_msg" "$severity"; then
-        filed=$((filed + 1))
+        created=$((created + 1))
+      elif [[ $? -eq 2 ]]; then
+        existing=$((existing + 1))
       fi
     fi
   done
 
-  echo "$filed"
+  echo "$created $existing"
 }
 
 # --- Gather tracked file list once ------------------------------------------
@@ -518,13 +537,22 @@ fi
 # --- File beads for remaining findings (if requested) --------------------
 
 if [[ $FILE_BEADS -eq 1 && $TOTAL -gt 0 ]]; then
-  echo "" >&2
-  echo "Filing beads for remaining findings..." >&2
+  if [[ "$(detect_bead_backend)" == "none" ]] || ! has_bead_store; then
+    echo "" >&2
+    echo "Bead filing skipped — this repo has no bead store / bead_cli.backend; findings reported above only." >&2
+  else
+    echo "" >&2
+    echo "Filing beads for remaining findings..." >&2
 
-  filed_count=$(file_beads_for_findings)
+    read -r created existing < <(file_beads_for_findings)
 
-  echo "" >&2
-  echo "Filed $filed_count bead(s) for hygiene findings." >&2
+    echo "" >&2
+    if [[ $created -gt 0 ]]; then
+      echo "Filed $created new bead(s); $existing already tracked." >&2
+    else
+      echo "No new bead(s); $existing already tracked." >&2
+    fi
+  fi
 fi
 
 if [[ $TOTAL -gt 0 ]]; then
