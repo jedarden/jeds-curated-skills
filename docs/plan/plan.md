@@ -212,3 +212,35 @@ ledger's proposals are routinely rejected by humans — that is a taste gap, fix
 Either way it is a two-way door: the 1.0 bundle is one `git show <sha>:plan-review/` away, and
 a tarball of the installed 1.0 copy was kept at
 `~/.claude/backups/skills-plan-review-1.0.0-20260820-2335.tgz` before the install.
+
+## Factory feedback loop: skills as the operator-side learning channel (2026-09-01)
+
+The fleet's incident-to-rule pipeline is entirely manual today: an incident
+becomes a memory by hand, a memory becomes CLAUDE.md prose by hand, prose
+becomes a hook rule by hand-editing Python, and the review skills in this
+repo run only when a human types them. Three changes close that loop from the
+skills side; the NEEDLE side is NEEDLE plan section 4.4.
+
+1. **`postmortem` emits a machine-readable lesson.** Alongside the prose
+   postmortem it writes one `CandidateLesson` record (the shape defined in
+   NEEDLE plan section 4.2: stable id, failure fingerprint, evidence
+   references, proposed rule text, proposed gate or hook change, scope,
+   expiry) to `docs/notes/lessons/<id>.md` with YAML frontmatter, so a lesson
+   can be picked up by review rather than re-derived. The skill also gets
+   installed by default; it is packaged today but not installed anywhere.
+2. **Every review skill files beads.** `plan-vs-built` and `find-stubs`
+   already create beads for their findings; `repo-hygiene` commits fixes but
+   files nothing, so anything it cannot fix dies with the session. All three
+   use the repo's declared bead backend (`bead_cli.backend` in
+   `.needle.yaml`; `bead` for bead-rs, `bf` otherwise) and never write a
+   `.beads/` file directly.
+3. **Scheduled sweeps.** `scripts/install-review-timers.sh` installs systemd
+   `--user` timers (the ex44 convention, like `bead-doctor-weekly`) that run
+   `plan-vs-built`, `find-stubs` and `repo-hygiene` weekly over the
+   configured workspace list with bead output, and a `memory-tool check`
+   run whose failures land as a bead in the home workspace. Timers are
+   idempotent to install and opt-in per host.
+
+**Not in scope here:** automatic promotion of a lesson into CLAUDE.md, a
+hook, or a gate. That stays a reviewed operation (NEEDLE ADR-027); these
+skills produce the evidence and the proposal, never the policy.
