@@ -1,2 +1,5 @@
-# NEEDLE execution traces are local diagnostics.
+# NEEDLE execution traces and other runtime state are local diagnostics.
+# Only .beads/checkpoint/ is durable (git-tracked); everything else is local.
 **/.beads/traces/
+**/.beads/diagnostics/
+**/.beads/events.jsonl
