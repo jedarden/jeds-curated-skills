@@ -28,8 +28,9 @@
 # Wired alongside scripts/validate-skills.sh in the pre-commit hook installed
 # by scripts/install-hooks.sh. The fixture skill (adr) deliberately has no
 # scripts/ of its own, so the core assertions do not depend on lib/common.sh
-# inlining behavior; the dedicated broken-lib contract below uses plan-review,
-# whose scripts do source it.
+# inlining behavior; the dedicated broken-lib contract below uses plan-review
+# and synthesizes the lib source line when the repo's scripts do not carry
+# it, so no assertion depends on the shared-lib extraction having landed.
 
 set -euo pipefail
 
@@ -40,8 +41,10 @@ INSTALL="$REPO_ROOT/install.sh"
 
 # Fixture subject: a small skill used as the installed-copy stand-in.
 FIXTURE_SKILL="adr"
-# A skill whose scripts source the shared lib/common.sh, for the broken-lib
-# contract (a bare cp -r of it cannot resolve that path in the skills dir).
+# A script-bearing skill for the broken-lib contract: a bare cp -r of it
+# cannot resolve ../../lib/common.sh in the skills dir. The contract
+# synthesizes that source line into the installed copy when the repo's own
+# scripts do not carry it yet, so it holds against any repo state.
 LIB_FIXTURE_SKILL="plan-review"
 # Synthetic sibling pre-seeded in the fake skills dir; install.sh must never
 # touch it — that is the "doesn't touch other installed skills" contract.
@@ -172,6 +175,14 @@ test_check_installed_contracts() {
   # lib — must clear it.
   new_fake_home
   cp -r "$REPO_ROOT/$LIB_FIXTURE_SKILL" "$FAKE_SKILLS/$LIB_FIXTURE_SKILL"
+  # Reproduce the bare-cp state without depending on repo state: if the
+  # repo's plan-review scripts do not source the shared lib yet (extraction
+  # not landed), write the source line into the installed copy so the
+  # unresolvable path exists for the checker to find.
+  if ! grep -rqF '../../lib/common.sh' "$FAKE_SKILLS/$LIB_FIXTURE_SKILL"; then
+    sed -i '2isource "$(dirname "$0")/../../lib/common.sh"' \
+      "$FAKE_SKILLS/$LIB_FIXTURE_SKILL/scripts/find-forks.sh"
+  fi
   local broken_out actual=0
   broken_out="$(run_check_installed "$LIB_FIXTURE_SKILL" 2>&1)" || actual=$?
   if [[ "$actual" == 1 ]] && grep -q "Broken lib path" <<< "$broken_out"; then
