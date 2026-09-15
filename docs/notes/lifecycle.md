@@ -27,6 +27,16 @@ This document maps the agent-driven software development lifecycle to the specif
                                               postmortem (if incident occurs)
 ```
 
+The diagram chains only the skills on the critical path every project walks.
+The repo's other review skills attach to the flow without being part of it,
+deliberately — they are conditional or periodic, so chaining them would invent
+a sequence they don't have. Where they attach:
+
+- **`adr`** — companion to `plan-review --lock`, for a decision that surfaces after the plan is locked (Cross-Cutting Skills; also the Post-Incident Workflow)
+- **`migration-runbook`** — at cutover, when the release being gated is itself a migration (Release & Operations Phase)
+- **`readme-review`** — whenever README changes, and re-checked at pre-release (Cross-Cutting Skills; Continuous Practices)
+- **`repo-hygiene`** — recurring maintenance, no fixed stage (Cross-Cutting Skills; Continuous Practices)
+
 ## Branch Points
 
 ### 1. Spec vs. Brief Entry Point
