@@ -65,6 +65,99 @@ install_skill() {
     inline_lib_common "$dest_dir"
 
     echo -e "${GREEN}  → Installed to $dest_dir${NC}"
+
+    # usage-statusline additionally deploys its runtime copy outside the
+    # skills directory and wires it into settings.json
+    if [[ "$skill_name" == "usage-statusline" ]]; then
+        install_statusline
+    fi
+}
+
+# Deploy usage-statusline's out-of-tree runtime copy and wire it into settings.json.
+# usage-statusline is the one skill whose runtime artifact lives outside
+# ~/.claude/skills/: scripts/usage-statusline.sh is copied to
+# ~/.claude/usage-statusline.sh and referenced as the statusLine command in
+# ~/.claude/settings.json (usage-statusline/SKILL.md steps 2-3).
+#
+# Idempotent: an identical deployed copy and an already-correct statusLine are
+# left as-is. Non-destructive: settings.json is merged with jq so unrelated
+# keys survive, and a statusLine that runs something else is never displaced.
+install_statusline() {
+    local src="$SCRIPT_DIR/usage-statusline/scripts/usage-statusline.sh"
+    local dest="$HOME/.claude/usage-statusline.sh"
+    local settings="$HOME/.claude/settings.json"
+
+    if [[ ! -f "$src" ]]; then
+        echo -e "${YELLOW}⚠ usage-statusline: $src not found, skipping out-of-tree deploy${NC}"
+        return 0
+    fi
+
+    # 1. Deploy the script itself
+    if [[ -f "$dest" ]] && ! cmp -s "$src" "$dest"; then
+        echo -e "${YELLOW}⚠ usage-statusline.sh: already installed and differs from repo, overwriting...${NC}"
+        echo -e "${YELLOW}  (run scripts/check-installed.sh usage-statusline first to see what changes)${NC}"
+    fi
+    # The installer usually runs inside `if ! install_skill ...`, where set -e
+    # is suspended for the whole call chain — a failed copy must return, not
+    # fall through to wiring statusLine at a path that was never written.
+    if ! cp "$src" "$dest"; then
+        echo -e "${RED}Error: failed to deploy $dest${NC}"
+        return 1
+    fi
+    chmod +x "$dest"
+    echo -e "${GREEN}✓ Deployed $dest${NC}"
+
+    # 2. Wire the statusLine command into settings.json
+    local cmd="/bin/bash $dest"
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ jq not found — could not update $settings automatically${NC}"
+        echo "  Merge this block into it manually:"
+        printf '    {"statusLine": {"type": "command", "command": "%s", "padding": 0}}\n' "$cmd"
+        return 0
+    fi
+
+    if [[ ! -f "$settings" ]]; then
+        jq -n --arg cmd "$cmd" '{statusLine: {type: "command", command: $cmd, padding: 0}}' > "$settings"
+        chmod 600 "$settings"
+        echo -e "${GREEN}✓ Created $settings with statusLine wired (takes effect in new sessions)${NC}"
+        return 0
+    fi
+
+    if ! jq -e . "$settings" >/dev/null 2>&1; then
+        echo -e "${RED}Error: $settings is not valid JSON — leaving it untouched${NC}"
+        echo "  Fix it, then re-run this installer to wire the statusLine."
+        return 1
+    fi
+
+    if jq -e 'has("statusLine") and (.statusLine != null)' "$settings" >/dev/null; then
+        local existing
+        existing=$(jq -r '.statusLine.command // ""' "$settings")
+        if [[ "$existing" == *usage-statusline.sh* ]]; then
+            echo -e "${GREEN}✓ statusLine already wired in $settings (takes effect in new sessions)${NC}"
+        else
+            echo -e "${YELLOW}⚠ $settings already has a statusLine running something else — leaving it untouched${NC}"
+            echo "  current command: $existing"
+            echo "  To use this statusline instead, change statusLine.command to:"
+            echo "    $cmd"
+        fi
+        return 0
+    fi
+
+    # Merge the statusLine block in alongside the existing keys. Write to a
+    # temp file in the same directory and preserve the original mode, so an
+    # interrupted write can't leave a truncated settings.json behind.
+    local tmp mode
+    tmp=$(mktemp "${settings}.XXXXXX")
+    if ! jq --arg cmd "$cmd" '.statusLine = {type: "command", command: $cmd, padding: 0}' "$settings" > "$tmp"; then
+        rm -f "$tmp"
+        echo -e "${RED}Error: failed to merge statusLine into $settings${NC}"
+        return 1
+    fi
+    mode=$(stat -c '%a' "$settings")
+    chmod "$mode" "$tmp"
+    mv -f "$tmp" "$settings"
+    echo -e "${GREEN}✓ Wired statusLine into $settings (takes effect in new sessions)${NC}"
 }
 
 # Inline lib/common.sh into scripts that source it
@@ -112,6 +205,11 @@ Usage: $0 [OPTION] | [skill-name] [skill-name...]
 
 Selective installer for jeds-curated-skills. Copies skills to ~/.claude/skills/
 without touching other directories already present.
+
+usage-statusline installs differently from the rest: in addition to the skill
+directory, its runtime script is deployed to ~/.claude/usage-statusline.sh and
+wired as the statusLine command in ~/.claude/settings.json. Both steps are
+idempotent, and existing settings.json keys are never overwritten.
 
 Options:
   --all              Install every skill from this repository

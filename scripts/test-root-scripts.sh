@@ -18,6 +18,20 @@
 #                  leaves other installed skills untouched
 #     --all        installs every skill --list reports
 #
+#   install.sh usage-statusline out-of-tree install (the one skill whose
+#   runtime artifact lives outside ~/.claude/skills/):
+#     deploys ~/.claude/usage-statusline.sh (byte-identical to the repo copy,
+#     executable) and merges a statusLine block into ~/.claude/settings.json —
+#     idempotently, never displacing a statusLine that runs something else,
+#     never dropping unrelated settings.json keys, and leaving invalid JSON
+#     untouched (exit 1)
+#
+#   check-installed.sh usage-statusline out-of-tree copy:
+#     a drifted deployed copy is drift (exit 1) — including on the default
+#     sweep of a machine that has the deployed copy but no skills-dir
+#     usage-statusline install, which is the shape of the machine where
+#     ADR-1's hardcoded /home/coding path was found live
+#
 # Everything runs against a temporary HOME with a fake ~/.claude/skills/;
 # the real HOME is never read or written. Usage:
 #
@@ -256,6 +270,96 @@ test_install_contracts() {
     test -f "$FAKE_SKILLS/$SIBLING_SKILL/$SIBLING_SENTINEL"
 }
 
+# --- usage-statusline out-of-tree install ------------------------------------
+
+test_statusline_contracts() {
+  echo ""
+  echo "=== usage-statusline out-of-tree install ==="
+  local repo_sl="$REPO_ROOT/usage-statusline/scripts/usage-statusline.sh"
+
+  # Fresh home: install deploys the runtime copy and creates settings.json.
+  new_fake_home
+  expect_exit 0 "usage-statusline install exits 0" run_install usage-statusline
+  expect_ok "runtime script deployed to ~/.claude/" \
+    cmp -s "$repo_sl" "$FAKE_HOME/.claude/usage-statusline.sh"
+  expect_ok "deployed runtime script is executable" \
+    test -x "$FAKE_HOME/.claude/usage-statusline.sh"
+  expect_ok "settings.json created with statusLine wired to the deployed copy" \
+    jq -e --arg cmd "/bin/bash $FAKE_HOME/.claude/usage-statusline.sh" \
+      '.statusLine == {type: "command", command: $cmd, padding: 0}' \
+      "$FAKE_HOME/.claude/settings.json"
+  expect_ok "created settings.json is owner-only" \
+    test "$(stat -c '%a' "$FAKE_HOME/.claude/settings.json")" = "600"
+
+  # Idempotent: a second run changes nothing observable.
+  expect_exit 0 "re-install exits 0 (idempotent)" run_install usage-statusline
+  expect_ok "re-install: deployed copy still matches repo" \
+    cmp -s "$repo_sl" "$FAKE_HOME/.claude/usage-statusline.sh"
+  expect_ok "re-install: statusLine still correctly wired" \
+    jq -e --arg cmd "/bin/bash $FAKE_HOME/.claude/usage-statusline.sh" \
+      '.statusLine == {type: "command", command: $cmd, padding: 0}' \
+      "$FAKE_HOME/.claude/settings.json"
+
+  # Non-destructive merge: pre-existing keys survive alongside statusLine.
+  new_fake_home
+  printf '{"model":"opus","permissions":{"allow":["Bash(ls)"]}}' \
+    > "$FAKE_HOME/.claude/settings.json"
+  expect_exit 0 "install over existing settings.json exits 0" run_install usage-statusline
+  expect_ok "pre-existing keys survive the merge" \
+    jq -e '.model == "opus" and .permissions.allow == ["Bash(ls)"]' \
+      "$FAKE_HOME/.claude/settings.json"
+  expect_ok "statusLine added beside them" \
+    jq -e '.statusLine.type == "command"' "$FAKE_HOME/.claude/settings.json"
+
+  # Non-destructive: a statusLine running something else is never displaced.
+  new_fake_home
+  printf '{"statusLine":{"type":"command","command":"cat /tmp/other.sh"}}' \
+    > "$FAKE_HOME/.claude/settings.json"
+  expect_exit 0 "install alongside foreign statusLine exits 0" run_install usage-statusline
+  expect_ok "foreign statusLine command untouched" \
+    jq -e '.statusLine.command == "cat /tmp/other.sh"' \
+      "$FAKE_HOME/.claude/settings.json"
+
+  # Non-destructive: invalid JSON is reported (exit 1) and left byte-identical.
+  new_fake_home
+  printf '{ this is not json' > "$FAKE_HOME/.claude/settings.json"
+  cp "$FAKE_HOME/.claude/settings.json" "$FAKE_HOME/settings.before"
+  expect_exit 1 "install against invalid settings.json → 1" run_install usage-statusline
+  expect_ok "invalid settings.json left byte-identical" \
+    cmp -s "$FAKE_HOME/settings.before" "$FAKE_HOME/.claude/settings.json"
+
+  # Drift in the deployed copy is drift, even with no skills-dir install —
+  # the live machine's shape, where ADR-1's hardcoded path hid. Named check,
+  # then the default sweep (which cannot intersect usage-statusline out of
+  # ~/.claude/skills/ here, so the out-of-tree check must fire on the
+  # deployed copy's existence alone).
+  new_fake_home
+  cp -r "$REPO_ROOT/$FIXTURE_SKILL" "$FAKE_SKILLS/$FIXTURE_SKILL"
+  mkdir -p "$FAKE_HOME/.claude"
+  cp "$repo_sl" "$FAKE_HOME/.claude/usage-statusline.sh"
+  echo "# local edit" >> "$FAKE_HOME/.claude/usage-statusline.sh"
+  local sl_out actual=0
+  sl_out="$(run_check_installed usage-statusline 2>&1)" || actual=$?
+  if [[ "$actual" == 1 ]] && grep -q "out-of-tree copy" <<< "$sl_out"; then
+    log_pass "drifted deployed copy, named check → 1 naming the out-of-tree copy"
+  else
+    log_fail "drifted deployed copy, named check — expected exit 1 naming the out-of-tree copy, got $actual"
+    echo "$sl_out" | tail -5 | sed 's/^/      /'
+  fi
+  actual=0
+  sl_out="$(run_check_installed 2>&1)" || actual=$?
+  if [[ "$actual" == 1 ]] && grep -q "out-of-tree copy" <<< "$sl_out"; then
+    log_pass "drifted deployed copy, default sweep → 1 (skills-dir install absent)"
+  else
+    log_fail "drifted deployed copy, default sweep — expected exit 1, got $actual"
+    echo "$sl_out" | tail -5 | sed 's/^/      /'
+  fi
+  # The documented fix (install.sh) clears both copies' drift.
+  run_install usage-statusline >/dev/null 2>&1
+  expect_exit 0 "documented fix (install.sh) clears deployed-copy drift → 0" \
+    run_check_installed usage-statusline
+}
+
 main() {
   echo "Root-script contract tests for jeds-curated-skills"
   echo "Repo root: $REPO_ROOT"
@@ -263,6 +367,7 @@ main() {
 
   test_check_installed_contracts
   test_install_contracts
+  test_statusline_contracts
 
   echo ""
   echo "========================================"

@@ -68,6 +68,14 @@ redeploys the out-of-tree `~/.claude/usage-statusline.sh` and re-wires
 `settings.json`. `check-installed.sh` flags the broken-lib state too, since the
 diff alone sees a byte-identical copy as clean.
 
+`usage-statusline`'s deployed copy is checked directly: `check-installed.sh`
+diffs `~/.claude/usage-statusline.sh` against the repo whenever the skill is
+named, and on any sweep where a deployed copy exists — including a machine with
+no `~/.claude/skills/usage-statusline/` for the sweep to intersect. A drift
+there is fixed the same way: `./install.sh usage-statusline` redeploys the
+script and re-wires `settings.json` (without displacing an existing
+`statusLine`).
+
 The drift checker detects the same issue that motivated this repo's own ADR-1: the installed `~/.claude/usage-statusline.sh` once hardcoded `/home/coding` while the repo's version generalized to `$HOME` — silent drift that went unnoticed until manual inspection.
 
 ## Skills
@@ -279,7 +287,11 @@ overspending before you hit the wall instead of after. Unlike the other skills
 here, it isn't invoked on demand; it installs a `statusLine` command that runs
 on every prompt. See `usage-statusline/README.md` for the full legend.
 
-**Usage:** ask Claude Code to "set up the usage statusline" (see `usage-statusline/SKILL.md`)
+**Usage:** ask Claude Code to "set up the usage statusline" (see `usage-statusline/SKILL.md`).
+`./install.sh usage-statusline` performs the whole install — the skill
+directory, the `~/.claude/usage-statusline.sh` deploy, and the `statusLine`
+wiring in `~/.claude/settings.json` — idempotently, merging alongside existing
+keys and never displacing a `statusLine` that runs something else.
 
 ## Factory Review Timers
 

@@ -9,7 +9,9 @@
 # usage-statusline additionally deploys a runtime copy OUT of the skills dir:
 # ~/.claude/usage-statusline.sh, wired as the statusLine command in
 # ~/.claude/settings.json. The per-skill directory diff can't see that file,
-# so it is diffed separately whenever usage-statusline is checked. That
+# so it is diffed separately — whenever usage-statusline is checked, and on
+# any run where a deployed copy exists (a machine can have the deployment
+# without the skills-dir install, which the sweep cannot intersect). That
 # deployed copy is where drift was first found live (a hardcoded /home/coding
 # path) — the incident that motivated ADR-1.
 #
@@ -151,10 +153,24 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
 done
 
 # usage-statusline's out-of-tree runtime copy. Checked whenever usage-statusline
-# is in scope (named explicitly, or picked up by the repo∩install-dir sweep).
-# Runs even when the skills-dir copy is absent — this machine, for instance, has
-# the deployed script and wiring but no ~/.claude/skills/usage-statusline/.
+# is in scope (named explicitly, or picked up by the repo∩install-dir sweep),
+# and also whenever a deployed copy exists — the sweep intersects repo skills
+# with ~/.claude/skills/, so on a machine that has the deployed script and
+# wiring but no ~/.claude/skills/usage-statusline/ (this machine, for one) the
+# sweep alone would never scope it in, and exactly there is where live drift
+# was found: the hardcoded /home/coding path that motivated ADR-1.
+statusline_in_scope=0
 if [[ " ${SKILLS_TO_CHECK[*]} " == *" usage-statusline "* ]]; then
+  statusline_in_scope=1
+fi
+if [[ "$statusline_in_scope" -eq 0 ]] && [[ -f "$HOME/.claude/usage-statusline.sh" ]]; then
+  statusline_in_scope=1
+  # Nothing above counted this skill (it is not in the install dir for the
+  # sweep to intersect), so this check is its only coverage — count it, or the
+  # summary below would report drift inside "Checked 0 skill(s)".
+  SKILLS_CHECKED=$((SKILLS_CHECKED + 1))
+fi
+if [[ "$statusline_in_scope" -eq 1 ]]; then
   echo "Checking usage-statusline (out-of-tree copy)..."
   repo_sl="$PWD/usage-statusline/scripts/usage-statusline.sh"
   deployed="$HOME/.claude/usage-statusline.sh"

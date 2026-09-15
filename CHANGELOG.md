@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **install.sh now performs usage-statusline's out-of-tree install** (2026-09-15) —
+  in addition to the skill directory it deploys `~/.claude/usage-statusline.sh`
+  and merges the `statusLine` block into `~/.claude/settings.json` alongside
+  existing keys: idempotent on re-run, never displacing a `statusLine` running
+  something else, leaving invalid JSON byte-identical with exit 1.
+  `check-installed.sh`'s out-of-tree diff now also fires on any sweep where a
+  deployed copy exists, not only when the skills-dir install lets the sweep
+  intersect the skill — a machine with the deployment but no skills-dir copy
+  previously reported "No drift detected" while the deployed copy (where
+  ADR-1's hardcoded `/home/coding` path was found live) had drifted. All of it
+  pinned in `scripts/test-root-scripts.sh`.
 - **Drift fix is now `./install.sh <skill>`, not a bare `cp -r`** (2026-09-15) —
   repo scripts source the shared `../../lib/common.sh`, a path that resolves
   outside a per-skill copy, so the old documented remedy installed scripts that
