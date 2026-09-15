@@ -32,6 +32,19 @@ repo and drives the skill through an actual `/plan-review` invocation, i.e. it n
 the loop). The other 13 skills have zero regression coverage: a bad edit to a checklist or a
 `scripts/*.sh` heuristic would ship silently.
 
+**Update 2026-09-15 — the script-bearing skills now have a regression net.** Every skill
+carrying a `score-*.sh`/`scan-*.sh` script has a `SELF-TEST.md`: `plan-review` (fixture with
+pinned `find-forks.sh` counts, per ADR-2), `diff-review` and `repo-hygiene`, and now
+`spec-review`, `plan-author`, `readme-review`, `api-design-review`, `test-plan-review`, and
+`release-readiness`. Each pins its script's happy path against an inline heredoc fixture with
+exact expected counts (score, MISSING list, per-style inventory, exit codes) plus documented
+grep quirks, so the `lib/common.sh` extraction has a before/after net — the scripts test from
+a repo checkout, since installed copies lag and score scripts source `../../lib/common.sh`.
+The functional, LLM-in-the-loop sections remain manual runbooks. Still uncovered: the
+prose-only skills (`adr`, `migration-runbook`, `plan-gap-review`, `plan-idea-gen`,
+`postmortem`, `threat-model` — their surface is checklists, not scripts) and
+`usage-statusline`, whose single script is a live statusline component, not a scorer.
+
 ## Architecture notes
 
 - Every skill follows the same shape: `SKILL.md` (frontmatter: `name`, `description`,
