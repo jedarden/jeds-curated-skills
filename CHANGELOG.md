@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
+- Root-script contract suite `scripts/test-root-scripts.sh` (2026-09-15) — fixture-based
+  shell test (temp HOME with a fake `~/.claude/skills/`; the real home is never touched)
+  pinning the documented behavior of `check-installed.sh` (exit codes 0 = no drift,
+  1 = drift, 2 = missing skills directory) and `install.sh` (`--list`, selective install
+  that leaves sibling skills untouched, `--all`). Runs in the pre-commit hook alongside
+  `validate-skills.sh` (re-run `scripts/install-hooks.sh` to pick it up on an existing
+  checkout).
 
 ### Changed
 - **gap-review → plan-gap-review 2.0.0** (2026-08-21) — renamed. Major bump because the
