@@ -12,8 +12,10 @@ bash bundles (`SKILL.md` + checklists + report templates + subagent prompts + op
 `scripts/*.sh`) that a Claude Code agent loads and follows in place of default behavior. There
 is no server, no build, no container image, no k8s workload for the skill bundles themselves.
 
-Distribution today is `git clone` (whole repo) or `cp -r <skill>/` (single skill) straight into
-`~/.claude/skills/`, per README.md. One skill, `usage-statusline`, has a genuinely live
+Distribution today is `git clone` (whole repo) or `./install.sh <skill>` (single skill) into
+`~/.claude/skills/`, per README.md — since 2026-09-15 the installer, not a bare `cp -r`, is the
+documented single-skill path, because repo scripts source the shared `lib/common.sh`, which the
+installer inlines so each installed skill is self-contained. One skill, `usage-statusline`, has a genuinely live
 component: its `scripts/usage-statusline.sh` gets copied to `~/.claude/usage-statusline.sh` and
 wired into `~/.claude/settings.json` as a `statusLine` command that runs on every prompt.
 
