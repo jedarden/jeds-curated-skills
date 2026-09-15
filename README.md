@@ -29,7 +29,7 @@ git clone https://github.com/jedarden/jeds-curated-skills ~/.claude/skills
 
 ## Checking for drift
 
-Skills are distributed by `cp -r` into `~/.claude/skills/` with no automatic update or drift-detection mechanism. If you edit skills locally or update the repo, installed copies can silently diverge from the canonical source.
+Skills are installed by copying into `~/.claude/skills/` (normally via `./install.sh`) with no automatic update or drift-detection mechanism. If you edit skills locally or update the repo, installed copies can silently diverge from the canonical source.
 
 To check for drift between installed skills and the repo:
 
@@ -51,11 +51,22 @@ To check specific skills only:
 - `1` — Drift detected
 - `2` — Usage error or `~/.claude/skills/` directory not found
 
-To fix drift, re-copy the skill from the repo:
+To fix drift, re-install the affected skill with the installer:
 
 ```bash
-cp -r plan-review/ ~/.claude/skills/
+./install.sh plan-review
 ```
+
+Do not fix drift with a bare `cp -r <skill>/ ~/.claude/skills/`. In this repo,
+five scripts across four skills source the shared `../../lib/common.sh` — a path
+that resolves to a `lib/` directory *beside the skill's parent*, present only in
+a full clone of the repo and never in a per-skill install. A plain copy
+byte-identical to the repo therefore installs scripts that fail at source time.
+`./install.sh` inlines `lib/common.sh` into those scripts at install time so
+each installed skill is self-contained, and for `usage-statusline` it also
+redeploys the out-of-tree `~/.claude/usage-statusline.sh` and re-wires
+`settings.json`. `check-installed.sh` flags the broken-lib state too, since the
+diff alone sees a byte-identical copy as clean.
 
 The drift checker detects the same issue that motivated this repo's own ADR-1: the installed `~/.claude/usage-statusline.sh` once hardcoded `/home/coding` while the repo's version generalized to `$HOME` — silent drift that went unnoticed until manual inspection.
 
@@ -269,6 +280,55 @@ here, it isn't invoked on demand; it installs a `statusLine` command that runs
 on every prompt. See `usage-statusline/README.md` for the full legend.
 
 **Usage:** ask Claude Code to "set up the usage statusline" (see `usage-statusline/SKILL.md`)
+
+## Factory Review Timers
+
+For automated, scheduled review of multiple workspaces, install the weekly systemd --user timers:
+
+```bash
+cd ~/jeds-curated-skills
+./scripts/install-review-timers.sh
+```
+
+This installs four staggered weekly timers:
+
+| Timer | Schedule | Skill |
+|-------|----------|-------|
+| `factory-review-plan-vs-built.timer` | Mon 02:00 | plan-vs-built |
+| `factory-review-find-stubs.timer` | Tue 02:00 | find-stubs |
+| `factory-review-repo-hygiene.timer` | Wed 02:00 | repo-hygiene |
+| `factory-review-memory-tool.timer` | Thu 02:00 | memory-tool check |
+
+Each timer reads workspaces from `~/.config/factory-review/workspaces.txt` (one path per line) and runs the corresponding skill, filing beads in each workspace as needed. The `memory-tool` timer runs once per week (not per-workspace) and files a bead in the home workspace if the check fails.
+
+**After installation:**
+
+```bash
+# Reload systemd
+systemctl --user daemon-reload
+
+# Enable all timers
+systemctl --user enable --now factory-review-*.timer
+
+# Check status
+systemctl --user list-timers | grep factory-review
+
+# Test a service manually
+systemctl --user start factory-review-memory-tool.service
+journalctl --user -u factory-review-memory-tool.service
+```
+
+**Uninstall:**
+
+```bash
+./scripts/install-review-timers.sh --uninstall
+```
+
+**Dry-run (preview commands):**
+
+```bash
+./scripts/install-review-timers.sh --dry-run
+```
 
 ## Philosophy
 

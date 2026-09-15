@@ -2,9 +2,21 @@
 #
 # check-installed.sh - Detect drift between installed skills and repo copies
 #
-# Skills are distributed by `cp -r` into ~/.claude/skills/ with no update or
-# drift-detection mechanism. This script diffs installed copies against the
-# repo to find silent divergence.
+# Skills are installed by copying into ~/.claude/skills/ (normally via
+# install.sh) with no update or drift-detection mechanism. This script diffs
+# installed copies against the repo to find silent divergence.
+#
+# usage-statusline additionally deploys a runtime copy OUT of the skills dir:
+# ~/.claude/usage-statusline.sh, wired as the statusLine command in
+# ~/.claude/settings.json. The per-skill directory diff can't see that file,
+# so it is diffed separately whenever usage-statusline is checked. That
+# deployed copy is where drift was first found live (a hardcoded /home/coding
+# path) — the incident that motivated ADR-1.
+#
+# A skill installed by a bare cp -r (rather than install.sh) can pass the
+# directory diff while its scripts are broken: in the repo they source
+# ../../lib/common.sh, which resolves outside the copied directory. That
+# unresolvable-lib state is flagged as drift too, so the remedy below runs.
 #
 # Usage:
 #   scripts/check-installed.sh [skill-name...]
@@ -30,6 +42,7 @@ NC='\033[0m' # No Color
 DRIFT_FOUND=0
 SKILLS_CHECKED=0
 SKILLS_WITH_DRIFT=0
+DIR_DRIFT_FLAGGED="" # usage-statusline already counted via its skills-dir diff
 
 # Check that the installed skills directory exists
 if [[ ! -d ~/.claude/skills/ ]]; then
@@ -41,7 +54,7 @@ fi
 # Determine which skills to check
 if [[ $# -eq 0 ]]; then
   # No arguments: check all skills present in both repo and install dir
-  mapfile -t SKILLS_TO_CHECK < <(comm -12 <(find . -maxdepth 2 -name SKILL.md -printf '%h\n' | sort -u) <(ls -1 ~/.claude/skills/ | sort))
+  mapfile -t SKILLS_TO_CHECK < <(comm -12 <(find . -maxdepth 2 -name SKILL.md -printf '%h\n' | sed 's|^\./||' | sort -u) <(ls -1 ~/.claude/skills/ | sort))
 else
   # Specific skills named: validate they exist in both locations
   SKILLS_TO_CHECK=("$@")
@@ -94,9 +107,24 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
     drift_output="${filtered_output%$'\n'}"
   fi
 
-  if [[ -n "$drift_output" ]]; then
+  # A bare cp -r of a skill directory copies the repo's raw
+  # `source ../../lib/common.sh` verbatim. That path resolves to
+  # ~/.claude/skills/lib/common.sh — a file a per-skill install never has
+  # (install.sh inlines the lib instead; only a full repo clone into
+  # ~/.claude/skills supplies it). The copy is byte-identical to the repo,
+  # so the diff above sees nothing; detect the unresolvable path explicitly.
+  broken_lib=""
+  if ! [[ -f ~/.claude/skills/lib/common.sh ]] \
+     && grep -rlF '../../lib/common.sh' "$installed_dir" --include='*.sh' >/dev/null 2>&1; then
+    broken_lib=1
+  fi
+
+  if [[ -n "$drift_output" || -n "$broken_lib" ]]; then
     DRIFT_FOUND=1
     SKILLS_WITH_DRIFT=$((SKILLS_WITH_DRIFT + 1))
+    if [[ "$skill" == "usage-statusline" ]]; then
+      DIR_DRIFT_FLAGGED=1
+    fi
     echo -e "${RED}  ✗ Drift detected${NC}"
     echo "$drift_output" | while IFS= read -r line; do
       # Parse diff output: "Only in repo: file" or "Files file1 and file2 differ"
@@ -113,10 +141,40 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
         echo -e "    ${YELLOW}Modified:${NC} $file"
       fi
     done
+    if [[ -n "$broken_lib" ]]; then
+      echo -e "    ${YELLOW}Broken lib path:${NC} installed scripts source ../../lib/common.sh,"
+      echo -e "    which resolves to missing ~/.claude/skills/lib/common.sh"
+    fi
   else
     echo -e "${GREEN}  ✓ No drift${NC}"
   fi
 done
+
+# usage-statusline's out-of-tree runtime copy. Checked whenever usage-statusline
+# is in scope (named explicitly, or picked up by the repo∩install-dir sweep).
+# Runs even when the skills-dir copy is absent — this machine, for instance, has
+# the deployed script and wiring but no ~/.claude/skills/usage-statusline/.
+if [[ " ${SKILLS_TO_CHECK[*]} " == *" usage-statusline "* ]]; then
+  echo "Checking usage-statusline (out-of-tree copy)..."
+  repo_sl="$PWD/usage-statusline/scripts/usage-statusline.sh"
+  deployed="$HOME/.claude/usage-statusline.sh"
+
+  if [[ ! -f "$repo_sl" ]]; then
+    echo -e "${YELLOW}  Warning: $repo_sl not found in repo${NC}"
+  elif [[ ! -f "$deployed" ]]; then
+    echo -e "${YELLOW}  Note: $deployed not deployed (statusline script not installed out-of-tree)${NC}"
+  elif ! cmp -s "$repo_sl" "$deployed"; then
+    DRIFT_FOUND=1
+    # Don't double-count the skill when its skills-dir diff already flagged it
+    if [[ -z "$DIR_DRIFT_FLAGGED" ]]; then
+      SKILLS_WITH_DRIFT=$((SKILLS_WITH_DRIFT + 1))
+    fi
+    echo -e "${RED}  ✗ Drift detected${NC}"
+    echo -e "    ${YELLOW}Modified:${NC} $deployed differs from usage-statusline/scripts/usage-statusline.sh"
+  else
+    echo -e "${GREEN}  ✓ No drift${NC}"
+  fi
+fi
 
 # Summary
 echo ""
@@ -133,7 +191,10 @@ if [[ $DRIFT_FOUND -eq 0 ]]; then
 else
   echo -e "${RED}$SKILLS_WITH_DRIFT skill(s) have drift${NC}"
   echo ""
-  echo "To fix drift, re-copy the skill from the repo:"
-  echo "  cp -r <skill>/ ~/.claude/skills/"
+  echo "To fix drift, re-install the affected skill(s) with the installer:"
+  echo "  ./install.sh <skill>"
+  echo "A bare cp -r is not enough: install.sh inlines the shared lib/common.sh"
+  echo "into the scripts that source it, and for usage-statusline it also"
+  echo "redeploys the out-of-tree ~/.claude/usage-statusline.sh copy."
   exit 1
 fi

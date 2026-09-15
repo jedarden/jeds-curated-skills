@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Drift fix is now `./install.sh <skill>`, not a bare `cp -r`** (2026-09-15) —
+  repo scripts source the shared `../../lib/common.sh`, a path that resolves
+  outside a per-skill copy, so the old documented remedy installed scripts that
+  fail at source time. `install.sh` inlines the lib (and redeploys
+  usage-statusline's out-of-tree copy); the README drift section and
+  `check-installed.sh`'s remedy output now say so, and the checker flags the
+  broken-lib state a bare copy produces (it is byte-identical to the repo, so
+  the diff alone sees nothing). Pinned in `scripts/test-root-scripts.sh`.
+
 ### Added
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
 - Root-script contract suite `scripts/test-root-scripts.sh` (2026-09-15) — fixture-based

@@ -7,7 +7,9 @@
 #
 #   scripts/check-installed.sh exit codes:
 #     0  installed copy matches the repo (no drift)
-#     1  drift detected (installed file modified or missing)
+#     1  drift detected (installed file modified or missing), or a bare
+#        cp -r install whose scripts reference the shared lib they cannot
+#        resolve ("broken lib path")
 #     2  missing ~/.claude/skills/ directory
 #
 #   install.sh behavior:
@@ -25,8 +27,9 @@
 #
 # Wired alongside scripts/validate-skills.sh in the pre-commit hook installed
 # by scripts/install-hooks.sh. The fixture skill (adr) deliberately has no
-# scripts/ of its own, so these assertions do not depend on lib/common.sh
-# inlining behavior.
+# scripts/ of its own, so the core assertions do not depend on lib/common.sh
+# inlining behavior; the dedicated broken-lib contract below uses plan-review,
+# whose scripts do source it.
 
 set -euo pipefail
 
@@ -37,6 +40,9 @@ INSTALL="$REPO_ROOT/install.sh"
 
 # Fixture subject: a small skill used as the installed-copy stand-in.
 FIXTURE_SKILL="adr"
+# A skill whose scripts source the shared lib/common.sh, for the broken-lib
+# contract (a bare cp -r of it cannot resolve that path in the skills dir).
+LIB_FIXTURE_SKILL="plan-review"
 # Synthetic sibling pre-seeded in the fake skills dir; install.sh must never
 # touch it — that is the "doesn't touch other installed skills" contract.
 SIBLING_SKILL="fixture-sibling-skill"
@@ -128,8 +134,8 @@ test_check_installed_contracts() {
   echo "=== check-installed.sh exit codes ==="
   new_fake_home
 
-  # Clean tree: install the fixture skill the way the README says skills are
-  # distributed (cp -r), then both check forms must report no drift.
+  # Clean tree: seed the fixture skill with a plain copy, then both check
+  # forms must report no drift.
   cp -r "$REPO_ROOT/$FIXTURE_SKILL" "$FAKE_SKILLS/$FIXTURE_SKILL"
 
   expect_exit 0 "clean tree, named skill → 0" \
@@ -142,10 +148,10 @@ test_check_installed_contracts() {
   expect_exit 1 "modified installed file → 1" \
     run_check_installed "$FIXTURE_SKILL"
 
-  # The README's documented fix for drift (re-copy the skill) must clear it.
-  rm -rf "$FAKE_SKILLS/$FIXTURE_SKILL"
-  cp -r "$REPO_ROOT/$FIXTURE_SKILL/" "$FAKE_SKILLS/$FIXTURE_SKILL"
-  expect_exit 0 "documented fix (re-copy) clears drift → 0" \
+  # The README's documented fix for drift (re-install with install.sh) must
+  # clear it. adr has no scripts, so this stays independent of lib inlining.
+  run_install "$FIXTURE_SKILL" >/dev/null 2>&1
+  expect_exit 0 "documented fix (install.sh re-install) clears drift → 0" \
     run_check_installed "$FIXTURE_SKILL"
 
   # A file missing from the install but present in the repo is drift too.
@@ -157,6 +163,26 @@ test_check_installed_contracts() {
   rm -rf "$FAKE_HOME/.claude/skills"
   expect_exit 2 "missing ~/.claude/skills/ → 2" \
     run_check_installed "$FIXTURE_SKILL"
+
+  # A bare cp -r of a skill whose scripts source the shared lib is
+  # byte-identical to the repo — the diff sees no drift — but its source path
+  # resolves to ~/.claude/skills/lib/common.sh, which a per-skill install
+  # never has. That broken-lib state must be flagged (exit 1, with the path
+  # named) so the documented fix gets run, and install.sh — which inlines the
+  # lib — must clear it.
+  new_fake_home
+  cp -r "$REPO_ROOT/$LIB_FIXTURE_SKILL" "$FAKE_SKILLS/$LIB_FIXTURE_SKILL"
+  local broken_out actual=0
+  broken_out="$(run_check_installed "$LIB_FIXTURE_SKILL" 2>&1)" || actual=$?
+  if [[ "$actual" == 1 ]] && grep -q "Broken lib path" <<< "$broken_out"; then
+    log_pass "bare cp -r of lib-sourcing skill → 1 with broken-lib path named"
+  else
+    log_fail "bare cp -r of lib-sourcing skill — expected exit 1 naming the broken lib, got $actual"
+    echo "$broken_out" | tail -5 | sed 's/^/      /'
+  fi
+  run_install "$LIB_FIXTURE_SKILL" >/dev/null 2>&1
+  expect_exit 0 "documented fix (install.sh) clears broken lib → 0" \
+    run_check_installed "$LIB_FIXTURE_SKILL"
 }
 
 # --- install.sh flag behavior -----------------------------------------------
