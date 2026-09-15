@@ -302,7 +302,7 @@ cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-This installs four staggered weekly timers:
+This installs five staggered weekly timers:
 
 | Timer | Schedule | Skill |
 |-------|----------|-------|
@@ -310,8 +310,11 @@ This installs four staggered weekly timers:
 | `factory-review-find-stubs.timer` | Tue 02:00 | find-stubs |
 | `factory-review-repo-hygiene.timer` | Wed 02:00 | repo-hygiene |
 | `factory-review-memory-tool.timer` | Thu 02:00 | memory-tool check |
+| `factory-review-installed-drift.timer` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
 
 Each timer reads workspaces from `~/.config/factory-review/workspaces.txt` (one path per line) and runs the corresponding skill, filing beads in each workspace as needed. The `memory-tool` timer runs once per week (not per-workspace) and files a bead in the home workspace if the check fails.
+
+The `installed-drift` timer is also machine-local rather than per-workspace: it runs `scripts/check-installed.sh` once a week from this repo (full sweep plus the `usage-statusline` out-of-tree deployed copy). On exit code 1 — drift detected — it files a bead in this repo's workspace, deduplicated while an open drift bead for that check already exists, and marks the systemd unit failed so the timer's last result is visible in `systemctl --user list-timers`. Without this timer the drift checker only runs when someone remembers to invoke it.
 
 **After installation:**
 
