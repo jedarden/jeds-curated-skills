@@ -1,0 +1,36 @@
+# ShellCheck baseline for scripts/lint-shell.sh
+# tool version: 0.11.0
+# regenerated: 2026-09-15T21:50:16Z
+# format: <repo-relative-path>|<SCcode>=<count> — findings at or below
+#   count pass; anything above is a failure. Entries exist to record
+#   known, accepted debt. Do not hand-edit counts — run
+#   scripts/lint-shell.sh --refresh.
+./install.sh|SC2129=1
+./readme-review/scripts/score-readme.sh|SC2001=1
+./release-readiness/scripts/scan-release.sh|SC2221=1
+./release-readiness/scripts/scan-release.sh|SC2222=1
+./repo-hygiene/scripts/repo_hygiene.sh|SC2034=2
+./scripts/check-installed.sh|SC2012=1
+./scripts/test-root-scripts.sh|SC2016=3
+./scripts/test-root-scripts.sh|SC2034=1
+./scripts/test-root-scripts.sh|SC2329=1
+./test-plan-review/scripts/scan-tests.sh|SC2086=2
+./test-plan-review/scripts/scan-tests.sh|SC2295=2
+./usage-statusline/scripts/usage-statusline.sh|SC2154=10
+
+# --- justifications (hand-maintained; everything above is refreshed) ---
+# ./usage-statusline/scripts/usage-statusline.sh|SC2154: p5h/p7d/p7f and
+#   siblings are assigned by `eval "$(jq -r ...)"` and are not statically
+#   visible to shellcheck. Not fixable without dropping the jq eval pattern.
+# ./release-readiness/scripts/scan-release.sh|SC2221+SC2222: `*test*` already
+#   covers `*/testdata/*`; both arms `continue`, so behavior is correct — the
+#   pattern list is redundant, not wrong.
+# ./scripts/test-root-scripts.sh|SC2016: all three sites are single-quoted
+#   programs for other interpreters — the sed script at :197 must insert a
+#   literal `$(dirname "$0")` into the installed copy (early expansion would
+#   be wrong), and the jq filters at :289/:300 take `$cmd` from --arg, not
+#   from the shell.
+# ./scripts/test-root-scripts.sh|SC2034 (YELLOW): color constant kept for
+#   parity with validate-skills.sh's logger palette; currently unused.
+# ./scripts/test-root-scripts.sh|SC2329 (cleanup): invoked via `trap cleanup
+#   EXIT`, which shellcheck does not count as a call site.

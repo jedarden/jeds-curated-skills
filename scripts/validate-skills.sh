@@ -5,8 +5,14 @@
 # Per ADR-1 (2026-07-20), this script validates every skill directory for:
 # 1. Frontmatter schema (SKILL.md YAML frontmatter with required fields)
 # 2. Reference integrity (files referenced in SKILL.md exist)
-# 3. Shell syntax (bash -n on all scripts/*.sh; optional shellcheck)
+# 3. Shell syntax (bash -n on all scripts/*.sh)
 # 4. Executable bit (scripts/*.sh have +x)
+#
+# Plus one repo-wide pass (full-repo runs only, not per-skill):
+# 5. Shell lint — scripts/lint-shell.sh runs shellcheck over every shell
+#    script and enforces the committed baseline scripts/shellcheck-baseline.txt
+#    (new findings fail; baseline entries are known, accepted debt). Skipped
+#    with a notice when shellcheck is not on PATH.
 #
 # Exit codes: 0 = all valid, 1 = validation failures, 2 = usage error
 
@@ -196,15 +202,8 @@ validate_shell_syntax() {
         else
             log_error "$script_name: bash syntax check failed"
         fi
-
-        # Check shellcheck if available (report only, don't fail)
-        if command -v shellcheck &>/dev/null; then
-            if shellcheck "$script" &>/dev/null; then
-                log_success "  $script_name: shellcheck clean"
-            else
-                log_warning "$script_name: shellcheck warnings (run manually for details)"
-            fi
-        fi
+        # Lint enforcement is repo-wide (baseline ratchet) via scripts/lint-shell.sh
+        # — see validate_shell_lint in main()
     done
 
     if [[ $found_scripts -eq 0 ]]; then
@@ -260,6 +259,26 @@ validate_skill() {
     log_success "Skill '$skill_name' validation complete"
 }
 
+# Repo-wide ShellCheck lint (baseline ratchet) — runs once, not per skill
+validate_shell_lint() {
+    echo ""
+    echo "=== Repo-wide shell lint (ShellCheck vs scripts/shellcheck-baseline.txt) ==="
+
+    if [[ ! -f "$SCRIPT_DIR/lint-shell.sh" ]]; then
+        log_warning "scripts/lint-shell.sh not found — shell lint skipped"
+        return
+    fi
+
+    if bash "$SCRIPT_DIR/lint-shell.sh"; then
+        if command -v shellcheck &>/dev/null; then
+            log_success "Shell lint within baseline"
+        fi
+        # Without shellcheck lint-shell.sh exits 0 with a skip notice; nothing to add here
+    else
+        log_error "Shell lint: new ShellCheck findings vs baseline (see output above)"
+    fi
+}
+
 # Main
 main() {
     local skills_to_check=()
@@ -302,6 +321,13 @@ main() {
     for skill_dir in "${skills_to_check[@]}"; do
         validate_skill "$skill_dir"
     done
+
+    # Repo-wide gate: full-repo runs only — a targeted single-skill run should
+    # not fail on another skill's lint state. The pre-commit hook runs in
+    # full-repo mode, so commits are always gated.
+    if [[ $# -eq 0 ]]; then
+        validate_shell_lint
+    fi
 
     echo ""
     echo "========================================"
