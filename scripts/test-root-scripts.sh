@@ -160,6 +160,20 @@ test_check_installed_contracts() {
   expect_exit 0 "clean tree, all-skills sweep → 0" \
     run_check_installed
 
+  # Exit 0 alone cannot distinguish a real sweep from an empty intersection:
+  # "No skills to check" also exits 0, which is how a ./-prefix mismatch
+  # between find -printf '%h' (./adr) and ls -1 (adr) once made the no-arg
+  # form silently check zero skills. With the fixture installed, the sweep
+  # naming it is the non-vacuous proof the intersection fired.
+  local sweep_out
+  sweep_out="$(run_check_installed 2>&1)"
+  if grep -q "^Checking ${FIXTURE_SKILL}\.\.\.$" <<< "$sweep_out"; then
+    log_pass "all-skills sweep checks the installed fixture (non-empty intersection)"
+  else
+    log_fail "all-skills sweep checked nothing — fixture absent from sweep output"
+    echo "$sweep_out" | tail -5 | sed 's/^/      /'
+  fi
+
   # Drift: a modified installed file must be detected.
   echo "local edit" >> "$FAKE_SKILLS/$FIXTURE_SKILL/SKILL.md"
   expect_exit 1 "modified installed file → 1" \
