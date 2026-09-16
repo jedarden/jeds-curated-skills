@@ -59,6 +59,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   broken-lib state a bare copy produces (it is byte-identical to the repo, so
   the diff alone sees nothing). Pinned in `scripts/test-root-scripts.sh`.
 
+### Fixed
+- **CI fixtures step runs GNU userland** (2026-09-16) — the `skills-validate`
+  WorkflowTemplate's `script-fixtures` step moved from `alpine/git` to
+  `debian:bookworm-slim`: busybox broke 5 of the suite's 160 pins on its
+  first live run (`wc -w` drops multibyte words — 131 vs the pinned 136 on
+  the plan-review fixture — and busybox `grep` has no `--include`, which
+  silently emptied `scan-tests.sh`'s framework list, its stderr discarded).
+  The pins were authored against GNU behavior and stay byte-identical.
+  Hardening the skill scripts themselves for busybox/macOS (`wc -w` × 2,
+  `grep -r --include` × 1) is a deliberate follow-up, not folded in here.
+
 ### Added
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
 - Root-script contract suite `scripts/test-root-scripts.sh` (2026-09-15) — fixture-based
