@@ -20,6 +20,18 @@
 # ../../lib/common.sh, which resolves outside the copied directory. That
 # unresolvable-lib state is flagged as drift too, so the remedy below runs.
 #
+# STALE INLINE SEMANTICS. An installed script that differs from its repo
+# source is expected only while it is byte-identical to the inline form
+# derived from the CURRENT repo copy of the script and the CURRENT
+# lib/common.sh (both produced by lib/inline.sh, the same code install.sh
+# writes at install time). When lib/common.sh changes in the repo, an
+# already-installed copy keeps the helpers it was installed with — that
+# state is drift ("stale inline"), not an expected inline, and the remedy is
+# the usual re-install. A lib change is therefore a re-install trigger for
+# every skill whose scripts inline it — the report names the stale copies per
+# skill. The inlining marker alone proves nothing: a marker-bearing copy that
+# no longer matches the derivation is stale too.
+#
 # Usage:
 #   scripts/check-installed.sh [skill-name...]
 #
@@ -35,6 +47,12 @@
 
 set -euo pipefail
 
+# The inline format lives in lib/inline.sh, shared with install.sh (see the
+# stale-inline semantics above). Repo skills are resolved against $PWD, so
+# this only works from the repo root; the lib path follows the same rule.
+CHECK_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$CHECK_SCRIPT_DIR/../lib/inline.sh"
+
 # Color output for readability
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -45,6 +63,9 @@ DRIFT_FOUND=0
 SKILLS_CHECKED=0
 SKILLS_WITH_DRIFT=0
 DIR_DRIFT_FLAGGED="" # usage-statusline already counted via its skills-dir diff
+# The lib the expected inline form is derived from — same $PWD rule as the
+# repo skill dirs below.
+REPO_LIB="$PWD/lib/common.sh"
 
 # Check that the installed skills directory exists
 if [[ ! -d ~/.claude/skills/ ]]; then
@@ -81,9 +102,14 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
 
   echo "Checking $skill..."
 
+  # Scripts of this skill whose installed inline was produced from an older
+  # lib/common.sh (or was hand-edited after inlining). Reset per skill.
+  stale_inlines=""
+
   # Use diff -r to compare, filtering out expected differences
   # Ignore: .beads/ (repo tracking), .git/ (if present), .claude/ (local config)
-  # Also ignore lib/common.sh inlining differences in scripts
+  # Also ignore lib/common.sh inlining differences in scripts — but only
+  # CURRENT inlines: see the stale-inline semantics in the header.
   drift_output=$(diff -r --brief "$repo_dir" "$installed_dir" 2>/dev/null || true)
 
   # Filter out expected differences from lib/common.sh inlining
@@ -95,13 +121,27 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
         repo_file="${BASH_REMATCH[1]}"
         installed_file="${BASH_REMATCH[2]}"
 
-        # Check if this is a script that sources lib/common.sh in the repo
-        if grep -qF '../../lib/common.sh' "$repo_file" 2>/dev/null; then
-          # Check if the installed version has the inlining marker
-          if grep -qF 'Inlined from lib/common.sh during install' "$installed_file" 2>/dev/null; then
-            # This is expected inlining - skip this difference
+        # A differing pair is an expected inline only when the repo copy
+        # sources the lib, the installed copy carries the inlining marker,
+        # AND the installed copy is byte-identical to the inline form
+        # derived from the current repo script + current repo lib. The
+        # marker alone proves nothing: it also marks copies inlined from an
+        # older lib, which is exactly the stale state this must not excuse.
+        if grep -qF '../../lib/common.sh' "$repo_file" 2>/dev/null \
+           && grep -qF 'Inlined from lib/common.sh during install' "$installed_file" 2>/dev/null \
+           && [[ -f "$REPO_LIB" ]]; then
+          expected_file=$(mktemp)
+          if emit_inlined_script "$repo_file" "$REPO_LIB" > "$expected_file" \
+             && cmp -s "$expected_file" "$installed_file"; then
+            rm -f "$expected_file"
+            # Current inline — this difference is the install model working.
             continue
           fi
+          rm -f "$expected_file"
+          stale_inlines+="$repo_file"$'\n'
+          # Reported as its own "Stale inline" entry below, not as a generic
+          # "Modified:" line, so the lib-specific remedy is obvious.
+          continue
         fi
       fi
       filtered_output="$filtered_output$line"$'\n'
@@ -121,7 +161,7 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
     broken_lib=1
   fi
 
-  if [[ -n "$drift_output" || -n "$broken_lib" ]]; then
+  if [[ -n "$drift_output" || -n "$broken_lib" || -n "$stale_inlines" ]]; then
     DRIFT_FOUND=1
     SKILLS_WITH_DRIFT=$((SKILLS_WITH_DRIFT + 1))
     if [[ "$skill" == "usage-statusline" ]]; then
@@ -146,6 +186,15 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
     if [[ -n "$broken_lib" ]]; then
       echo -e "    ${YELLOW}Broken lib path:${NC} installed scripts source ../../lib/common.sh,"
       echo -e "    which resolves to missing ~/.claude/skills/lib/common.sh"
+    fi
+    if [[ -n "$stale_inlines" ]]; then
+      while IFS= read -r stale_file; do
+        [[ -n "$stale_file" ]] || continue
+        echo -e "    ${YELLOW}Stale inline:${NC} $stale_file"
+      done <<< "$stale_inlines"
+      echo -e "    the installed inline no longer matches what ./install.sh would"
+      echo -e "    produce from the current repo lib (older lib at install time, or"
+      echo -e "    edited since) — ./install.sh $skill re-inlines from the current lib"
     fi
   else
     echo -e "${GREEN}  ✓ No drift${NC}"

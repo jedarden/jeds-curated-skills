@@ -68,6 +68,22 @@ redeploys the out-of-tree `~/.claude/usage-statusline.sh` and re-wires
 `settings.json`. `check-installed.sh` flags the broken-lib state too, since the
 diff alone sees a byte-identical copy as clean.
 
+**Stale inlines are drift.** An installed script differing from its repo source
+is expected only while it is byte-identical to what `./install.sh` would inline
+*today*: the checker re-derives the expected inline from the current repo copy
+of the script plus the current `lib/common.sh` (the same derivation the
+installer writes, shared via `lib/inline.sh`) and compares. The inlining marker
+alone proves nothing. So when `lib/common.sh` changes in the repo, every
+already-installed copy of the four skills the installer inlines for —
+`plan-author`, `plan-review`, `readme-review`, and `spec-review` — still runs
+the helpers it was installed with, and the next check reports them as
+`Stale inline` drift — the fix is the usual re-install, which re-inlines from
+the current lib:
+
+```bash
+./install.sh plan-author plan-review readme-review spec-review
+```
+
 `usage-statusline`'s deployed copy is checked directly: `check-installed.sh`
 diffs `~/.claude/usage-statusline.sh` against the repo whenever the skill is
 named, and on any sweep where a deployed copy exists — including a machine with

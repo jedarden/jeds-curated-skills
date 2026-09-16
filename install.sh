@@ -10,6 +10,11 @@ set -euo pipefail
 TARGET_DIR="$HOME/.claude/skills"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# The inline format lives in lib/inline.sh, shared with scripts/check-installed.sh:
+# the checker re-derives an installed copy's expected inline from the current
+# repo lib, so both sides must produce byte-identical output. One implementation.
+source "$SCRIPT_DIR/lib/inline.sh"
+
 # Colors for output
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
@@ -166,8 +171,11 @@ inline_lib_common() {
     local skill_dir="$1"
     local lib_common="$SCRIPT_DIR/lib/common.sh"
 
-    # Check if lib/common.sh exists
+    # Check if lib/common.sh exists. Silent skip would install scripts that
+    # fail at source time with nothing on record — say so instead.
     if [[ ! -f "$lib_common" ]]; then
+        echo -e "${YELLOW}Warning: $lib_common not found — scripts that source it are installed uninlined${NC}" >&2
+        echo -e "and will fail until the lib is restored and the skill is reinstalled." >&2
         return 0
     fi
 
@@ -179,18 +187,9 @@ inline_lib_common() {
             local tmp_file
             tmp_file=$(mktemp)
 
-            # Copy script up to (but not including) the source line
-            awk '/source.*..\/..\/lib\/common\.sh/{exit} 1' "$script" > "$tmp_file"
-
-            # Add a marker comment
-            echo '# --- Inlined from lib/common.sh during install ---' >> "$tmp_file"
-
-            # Append lib/common.sh content (skip shebang, blank lines, and comments at start)
-            # Keep everything from 'set -euo pipefail' to the end
-            awk 'f; /^set -euo pipefail/{f=1}' "$lib_common" >> "$tmp_file"
-
-            # Append the rest of the script after the source line
-            awk 'f; /source.*..\/..\/lib\/common\.sh/{f=1; next}' "$script" >> "$tmp_file"
+            # Write the inlined form (format shared with check-installed.sh
+            # via lib/inline.sh — the checker re-derives exactly this)
+            emit_inlined_script "$script" "$lib_common" > "$tmp_file"
 
             # Replace original script with inlined version
             mv "$tmp_file" "$script"

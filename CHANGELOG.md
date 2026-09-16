@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unexercised.
 
 ### Changed
+- **Stale inlines are drift** (2026-09-16) — the inline excusal in
+  `check-installed.sh` was marker-based: any installed copy carrying the
+  "Inlined from lib/common.sh" marker passed the repo diff, so a `lib/common.sh`
+  fix in the repo left every already-installed copy silently running the old
+  helpers forever. The checker now re-derives the expected inline from the
+  current repo script plus the current lib — the same derivation install.sh
+  writes, as one implementation in `lib/inline.sh` sourced by both — and
+  excuses only a byte-identical match. Anything else (older lib at install
+  time, hand-edit) is reported as `Stale inline` per skill with the re-install
+  remedy, exit 1. A lib change is now a re-install trigger for the four skills
+  whose scripts inline it (`plan-author`, `plan-review`, `readme-review`,
+  `spec-review`); README says so. Pinned in `scripts/test-root-scripts.sh`
+  (fresh install clean, hand-edit stale, lib-fix-after-install stale,
+  re-install lands the new helpers).
 - **install.sh now performs usage-statusline's out-of-tree install** (2026-09-15) —
   in addition to the skill directory it deploys `~/.claude/usage-statusline.sh`
   and merges the `statusLine` block into `~/.claude/settings.json` alongside

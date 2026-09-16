@@ -34,11 +34,22 @@
 #     never dropping unrelated settings.json keys, and leaving invalid JSON
 #     untouched (exit 1)
 #
+#   check-installed.sh stale-inline detection (the inline is expected drift
+#   only while it matches what install.sh would produce TODAY):
+#     a fresh install checks clean even though the installed scripts differ
+#     from their repo sources (the derived inline matches byte-for-byte); a
+#     hand-edited installed inline is drift; a lib/common.sh fixed in the
+#     repo after an install makes every inlined installed copy stale — exit 1
+#     naming "Stale inline" — and the documented fix (re-install) clears it
+#     and lands the new helpers. Runs against a fixture copy of the repo, so
+#     the lib-mutation never touches the real checkout.
+#
 #   check-installed.sh usage-statusline out-of-tree copy:
 #     a drifted deployed copy is drift (exit 1) — including on the default
 #     sweep of a machine that has the deployed copy but no skills-dir
 #     usage-statusline install, which is the shape of the machine where
 #     ADR-1's hardcoded /home/coding path was found live
+#
 #
 # Everything runs against a temporary HOME with a fake ~/.claude/skills/;
 # the real HOME is never read or written. Usage:
@@ -60,6 +71,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CHECK_INSTALLED="$REPO_ROOT/scripts/check-installed.sh"
 INSTALL="$REPO_ROOT/install.sh"
+
+# Drop the ambient git context — same fix as test-script-fixtures.sh, for the
+# same reason: the pre-commit hook runs this suite with git's environment
+# exported, and fixture suites below build throwaway git repos whose git
+# calls must resolve inside the fixture, not in this repo. Inheriting GIT_DIR
+# makes fixture `git log origin/main` walks read THIS repo's history instead
+# of the fixture's, flipping contracts that depend on fixture commit dates
+# (observed live: the failure appears only when the suite runs from the
+# hook). The suite treats the checkout as read-only files and never runs git
+# against it, so dropping the context here is safe.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 
 # Fixture subject: a small skill used as the installed-copy stand-in.
 FIXTURE_SKILL="adr"
@@ -155,6 +178,46 @@ run_check_installed() {
 # $0, so the cwd is irrelevant here.
 run_install() {
   env HOME="$FAKE_HOME" bash "$INSTALL" "$@"
+}
+
+# Same two, but against a fixture COPY of the repo instead of $REPO_ROOT.
+# The stale-inline contracts mutate lib/common.sh — that must happen in the
+# copy, never in the real checkout — so the installer and checker run from
+# the copy's own paths, and the checker's $PWD-resolved repo skills are the
+# copy's.
+run_check_installed_in() {
+  local repo_dir="$1"; shift
+  (cd "$repo_dir" && env HOME="$FAKE_HOME" bash "$repo_dir/scripts/check-installed.sh" "$@")
+}
+run_install_in() {
+  local repo_dir="$1"; shift
+  env HOME="$FAKE_HOME" bash "$repo_dir/install.sh" "$@"
+}
+
+# Fixture copy of the repo holding everything the installer and checker
+# touch: install.sh, lib/ (inline derivation + the shared lib itself),
+# scripts/check-installed.sh, and one lib-sourcing skill. If the checkout's
+# lib/common.sh has not landed yet (extraction pending), a minimal lib is
+# synthesized so the inlining contracts hold against any repo state — the
+# same independence rule the broken-lib contract follows.
+new_inline_fixture_repo() {
+  FAKE_REPO="$(mktemp -d "${TMPDIR:-/tmp}/jcs-inline-fixture.XXXXXX")"
+  if [[ "$FAKE_REPO" != "${TMPDIR:-/tmp}"/* ]]; then
+    echo -e "${RED}fixture repo escaped tmp: $FAKE_REPO${NC}" >&2
+    exit 1
+  fi
+  FAKE_REPOS+=("$FAKE_REPO")
+  mkdir -p "$FAKE_REPO/scripts" "$FAKE_REPO/lib"
+  cp "$REPO_ROOT/install.sh" "$FAKE_REPO/install.sh"
+  cp "$REPO_ROOT/scripts/check-installed.sh" "$FAKE_REPO/scripts/check-installed.sh"
+  if compgen -G "$REPO_ROOT/lib/*.sh" >/dev/null; then
+    cp "$REPO_ROOT/lib/"*.sh "$FAKE_REPO/lib/"
+  fi
+  if [[ ! -f "$FAKE_REPO/lib/common.sh" ]]; then
+    printf '#!/usr/bin/env bash\nset -euo pipefail\nsynthetic_helper() { echo synthetic; }\n' \
+      > "$FAKE_REPO/lib/common.sh"
+  fi
+  cp -r "$REPO_ROOT/$LIB_FIXTURE_SKILL" "$FAKE_REPO/$LIB_FIXTURE_SKILL"
 }
 
 # Assert a command exits with the expected code; print its tail on failure.
@@ -260,6 +323,81 @@ test_check_installed_contracts() {
   run_install "$LIB_FIXTURE_SKILL" >/dev/null 2>&1
   expect_exit 0 "documented fix (install.sh) clears broken lib → 0" \
     run_check_installed "$LIB_FIXTURE_SKILL"
+}
+
+# --- check-installed.sh stale-inline detection -------------------------------
+
+test_stale_inline_contracts() {
+  echo ""
+  echo "=== check-installed.sh stale-inline detection ==="
+  new_fake_home
+  new_inline_fixture_repo
+
+  # Deterministic lib-sourcing victim: the extraction may or may not have
+  # landed in the checkout this suite runs in, so the fixture repo's copy of
+  # the victim is given the source line when it does not carry one. The
+  # fixture repo is a temp copy — the real checkout is never modified.
+  local victim_repo="$FAKE_REPO/$LIB_FIXTURE_SKILL/scripts/find-forks.sh"
+  if ! grep -qF '../../lib/common.sh' "$victim_repo"; then
+    sed -i '2isource "$(dirname "$0")/../../lib/common.sh"' "$victim_repo"
+  fi
+  local victim_installed="$FAKE_SKILLS/$LIB_FIXTURE_SKILL/scripts/find-forks.sh"
+
+  # Install from the fixture repo: the victim's installed copy carries the
+  # inlining marker, and — the pinned invariant — is byte-identical to what
+  # the checker derives from the current repo script + current repo lib, so
+  # the repo-vs-installed difference checks clean.
+  run_install_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL" >/dev/null 2>&1
+  expect_ok "install inlined the lib into the installed copy" \
+    grep -qF 'Inlined from lib/common.sh during install' "$victim_installed"
+  expect_exit 0 "fresh install: derived inline matches installed copy → 0" \
+    run_check_installed_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL"
+
+  # A hand-edited installed inline is not excused by its marker: it no longer
+  # matches the derivation, so it is drift, named as a stale inline.
+  echo "# tampered after install" >> "$victim_installed"
+  local stale_out actual=0
+  stale_out="$(run_check_installed_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL" 2>&1)" || actual=$?
+  if [[ "$actual" == 1 ]] && grep -q "Stale inline" <<< "$stale_out" \
+     && grep -q "find-forks.sh" <<< "$stale_out"; then
+    log_pass "hand-edited installed inline → 1 naming it a stale inline"
+  else
+    log_fail "hand-edited installed inline — expected exit 1 naming a stale inline, got $actual"
+    echo "$stale_out" | tail -5 | sed 's/^/      /'
+  fi
+  # The documented fix clears it.
+  run_install_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL" >/dev/null 2>&1
+  expect_exit 0 "documented fix (re-install) clears the stale inline → 0" \
+    run_check_installed_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL"
+
+  # The core scenario: lib/common.sh is fixed in the repo AFTER an install.
+  # Installed copies keep the helpers they were inlined with; a plain
+  # repo-vs-installed diff cannot tell that state from a legitimate inline,
+  # so the checker must re-derive the expected inline and call the mismatch
+  # stale. The lib is appended to in the fixture repo, never the real one.
+  cat >> "$FAKE_REPO/lib/common.sh" <<'EOF'
+
+# Added after the install above; a current inline must carry it.
+post_install_helper() { echo "lib changed after install"; }
+EOF
+  actual=0
+  stale_out="$(run_check_installed_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL" 2>&1)" || actual=$?
+  if [[ "$actual" == 1 ]] && grep -q "Stale inline" <<< "$stale_out" \
+     && grep -q "find-forks.sh" <<< "$stale_out"; then
+    log_pass "lib fixed after install → 1 with the inlined copies named stale"
+  else
+    log_fail "lib fixed after install — expected exit 1 naming stale inlines, got $actual"
+    echo "$stale_out" | tail -5 | sed 's/^/      /'
+  fi
+
+  # The documented fix re-inlines from the current lib: the refreshed copy
+  # must both check clean and actually carry the new helper — proving the
+  # inline is current, not merely excused.
+  run_install_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL" >/dev/null 2>&1
+  expect_exit 0 "documented fix (re-install) lands the new lib helpers → 0" \
+    run_check_installed_in "$FAKE_REPO" "$LIB_FIXTURE_SKILL"
+  expect_ok "refreshed installed copy carries the post-install helper" \
+    grep -qF 'post_install_helper' "$victim_installed"
 }
 
 # --- install.sh flag behavior -----------------------------------------------
@@ -485,6 +623,7 @@ main() {
   echo "(fixtures run against a temp HOME; the real HOME is untouched)"
 
   test_check_installed_contracts
+  test_stale_inline_contracts
   test_install_contracts
   test_install_hooks_contracts
   test_statusline_contracts

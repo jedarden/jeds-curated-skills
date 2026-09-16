@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Source common utilities (install.sh replaces this line with an inlined copy of the lib at install time)
+source "$(dirname "$0")/../../lib/common.sh"
+
 FILE="${1:-}"
 if [[ -z "$FILE" || ! -f "$FILE" ]]; then
   echo "Usage: scan-headers.sh <plan-file>" >&2
@@ -21,9 +24,7 @@ echo ""
 
 # Count by level
 echo "--- Header Counts ---"
-echo "H1 (# ): $(grep -c "^# " "$FILE" 2>/dev/null || echo 0)"
-echo "H2 (## ): $(grep -c "^## " "$FILE" 2>/dev/null || echo 0)"
-echo "H3 (### ): $(grep -c "^### " "$FILE" 2>/dev/null || echo 0)"
+count_headers "$FILE"
 echo ""
 
 # Check for key section presence (exit 0 regardless — just reporting)

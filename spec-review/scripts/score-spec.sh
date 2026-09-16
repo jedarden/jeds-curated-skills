@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Source common utilities (install.sh replaces this line with an inlined copy of the lib at install time)
+source "$(dirname "$0")/../../lib/common.sh"
+
 FILE="${1:-}"
 if [[ -z "$FILE" || ! -f "$FILE" ]]; then
   echo "Usage: score-spec.sh <spec-file>" >&2
@@ -14,23 +17,6 @@ fi
 PASS=0
 FAIL=0
 FAILURES=()
-
-# A check passes if ANY of its patterns is present (case-insensitive).
-check() {
-  local label="$1"; shift
-  local matched=0
-  for pattern in "$@"; do
-    if grep -qiE "$pattern" "$FILE" 2>/dev/null; then
-      matched=1; break
-    fi
-  done
-  if [[ $matched -eq 1 ]]; then
-    ((PASS++)) || true
-  else
-    ((FAIL++)) || true
-    FAILURES+=("MISSING: $label")
-  fi
-}
 
 # Presence of structure that a plannable spec needs.
 check "Acceptance criteria"      "acceptance crit" "acceptance scenario" "given.*when.*then" "passes when" "pass/fail"
@@ -47,11 +33,11 @@ check "Dependencies"             "dependenc" "depends on" "third.party" "externa
 check "Open questions"           "open question" "tbd" "to be decided" "unresolved" "needs decision"
 check "Constraints"              "constraint" "deadline" "budget" "compliance" "regulat" "limit"
 
+TOTAL=$((PASS + FAIL))
+PCT=$((PASS * 100 / TOTAL))
+
 echo "=== Spec Score: $FILE ==="
 echo ""
-
-TOTAL=$((PASS + FAIL))
-PCT=$(( PASS * 100 / TOTAL ))
 echo "Structure score: $PASS / $TOTAL ($PCT%)"
 echo ""
 
@@ -64,13 +50,8 @@ else
 fi
 
 echo ""
-if [[ ${#FAILURES[@]} -gt 0 ]]; then
-  echo "--- Missing Structure ---"
-  for f in "${FAILURES[@]}"; do
-    echo "  $f"
-  done
-  echo ""
-fi
+print_failures "--- Missing Structure ---"
+echo ""
 
 # Ambiguity smell scan — count vague terms (a high count signals clarity defects).
 echo "--- Ambiguity Smells (count of vague terms) ---"

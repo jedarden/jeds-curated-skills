@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Source common utilities (install.sh replaces this line with an inlined copy of the lib at install time)
+source "$(dirname "$0")/../../lib/common.sh"
+
 FILE="${1:-}"
 if [[ -z "$FILE" || ! -f "$FILE" ]]; then
   echo "Usage: score-plan.sh <plan-file>" >&2
@@ -14,22 +17,6 @@ fi
 PASS=0
 FAIL=0
 FAILURES=()
-
-check() {
-  local label="$1"; shift
-  local matched=0
-  for pattern in "$@"; do
-    if grep -qiE "$pattern" "$FILE" 2>/dev/null; then
-      matched=1; break
-    fi
-  done
-  if [[ $matched -eq 1 ]]; then
-    ((PASS++)) || true
-  else
-    ((FAIL++)) || true
-    FAILURES+=("MISSING: $label")
-  fi
-}
 
 # Category 1: Scope Lock
 check "1.1 North Star"               "north star" "one.sentence" "mission statement"
@@ -87,9 +74,9 @@ check "9.8 Doctor Command"           "doctor" "health check" "self.?test.*comman
 check "11.1 Risk Register"           "risk register" "risk.*likelihood" "risk.*impact" "risk.*mitigation"
 check "11.2 Plan B"                  "plan b" "fallback" "alternative.*approach" "if.*fails.*instead"
 
-# Tally
+# Tally and output
 TOTAL=$((PASS + FAIL))
-PCT=$(( PASS * 100 / TOTAL ))
+PCT=$((PASS * 100 / TOTAL))
 
 echo "=== Plan Score: $FILE ==="
 echo ""
@@ -105,9 +92,4 @@ else
 fi
 
 echo ""
-if [[ ${#FAILURES[@]} -gt 0 ]]; then
-  echo "--- Missing Checks ---"
-  for f in "${FAILURES[@]}"; do
-    echo "  $f"
-  done
-fi
+print_failures "--- Missing Checks ---"

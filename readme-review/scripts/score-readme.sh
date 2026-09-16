@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Source common utilities (install.sh replaces this line with an inlined copy of the lib at install time)
+source "$(dirname "$0")/../../lib/common.sh"
+
 FILE="${1:-}"
 if [[ -z "$FILE" || ! -f "$FILE" ]]; then
   echo "Usage: score-readme.sh <readme-file>" >&2
@@ -41,22 +44,6 @@ fi
 PASS=0
 FAIL=0
 FAILURES=()
-
-check() {
-  local label="$1"; shift
-  local matched=0
-  for pattern in "$@"; do
-    if grep -qiE -e "$pattern" "$FILE" 2>/dev/null; then
-      matched=1; break
-    fi
-  done
-  if [[ $matched -eq 1 ]]; then
-    ((PASS++)) || true
-  else
-    ((FAIL++)) || true
-    FAILURES+=("MISSING: $label")
-  fi
-}
 
 # A sibling file check (license/contributing/changelog often live as files)
 file_check() {
@@ -105,7 +92,7 @@ SECTIONS="$(grep -cE '^#{1,3} ' "$FILE" 2>/dev/null || echo 0)"
 # --- Tally ---
 TOTAL=$((PASS + FAIL))
 PCT=0
-[[ $TOTAL -gt 0 ]] && PCT=$(( PASS * 100 / TOTAL ))
+[[ $TOTAL -gt 0 ]] && PCT=$((PASS * 100 / TOTAL))
 
 echo "=== README Score: $FILE ==="
 echo ""
@@ -131,12 +118,7 @@ echo "--- Section inventory ---"
 grep -nE '^#{1,3} ' "$FILE" 2>/dev/null || echo "  (no markdown headings found)"
 
 echo ""
-if [[ ${#FAILURES[@]} -gt 0 ]]; then
-  echo "--- Missing (heuristic) ---"
-  for f in "${FAILURES[@]}"; do
-    echo "  $f"
-  done
-fi
+print_failures "--- Missing (heuristic) ---"
 
 echo ""
 if [[ -n "$PLACEHOLDERS" ]]; then
