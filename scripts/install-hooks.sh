@@ -3,9 +3,12 @@
 # install-hooks.sh - Install git hooks for jeds-curated-skills repository
 #
 # Installs a git pre-commit hook that runs scripts/validate-skills.sh (skill
-# bundle validation, per ADR-1) and scripts/test-root-scripts.sh (contract
-# tests for check-installed.sh's exit codes and install.sh's flag behavior)
-# before each commit, catching structural issues early.
+# bundle validation, per ADR-1), scripts/test-root-scripts.sh (contract
+# tests for check-installed.sh's exit codes and install.sh's flag behavior),
+# and scripts/test-script-fixtures.sh (automated runs of the per-skill
+# SELF-TEST.md script fixtures — the regression net for the score/scan
+# scripts) before each commit, catching structural and behavioral drift
+# early.
 #
 # Per ADR-1 (2026-07-20), hooks are not versioned by git, so this script is the
 # install step for local repo checkouts.
@@ -52,17 +55,23 @@ if [[ ! -f "$CONTRACT_TEST" ]]; then
     log_error "test-root-scripts.sh not found at $CONTRACT_TEST"
     exit 1
 fi
+FIXTURE_TEST="$SCRIPT_DIR/test-script-fixtures.sh"
+if [[ ! -f "$FIXTURE_TEST" ]]; then
+    log_error "test-script-fixtures.sh not found at $FIXTURE_TEST"
+    exit 1
+fi
 
 # Check if pre-commit hook already exists
 if [[ -f "$PRE_COMMIT_HOOK" ]]; then
     # Check if it's our hook
     if grep -q "validate-skills.sh" "$PRE_COMMIT_HOOK" 2>/dev/null; then
-        if grep -q "test-root-scripts.sh" "$PRE_COMMIT_HOOK" 2>/dev/null; then
-            log_info "pre-commit hook already installed (validate-skills.sh + test-root-scripts.sh)"
+        if grep -q "test-root-scripts.sh" "$PRE_COMMIT_HOOK" 2>/dev/null \
+            && grep -q "test-script-fixtures.sh" "$PRE_COMMIT_HOOK" 2>/dev/null; then
+            log_info "pre-commit hook already installed (validate-skills.sh + test-root-scripts.sh + test-script-fixtures.sh)"
             echo "Run: $PRE_COMMIT_HOOK"
             exit 0
         fi
-        log_info "pre-commit hook found (validate-skills.sh only) — adding test-root-scripts.sh"
+        log_info "pre-commit hook found (older version) — adding the missing suites"
     else
         log_warning "Existing pre-commit hook found. Backing up to pre-commit.backup"
         cp "$PRE_COMMIT_HOOK" "$PRE_COMMIT_HOOK.backup"
@@ -74,17 +83,19 @@ cat > "$PRE_COMMIT_HOOK" <<'EOF'
 #!/usr/bin/env bash
 #
 # Git pre-commit hook for jeds-curated-skills
-# Runs validate-skills.sh (skill bundles) and test-root-scripts.sh (root
-# script contracts) before each commit
+# Runs validate-skills.sh (skill bundles), test-root-scripts.sh (root
+# script contracts), and test-script-fixtures.sh (SELF-TEST script
+# fixtures) before each commit
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Run validation against any changed skill directories
-# If either fails, the commit is aborted
+# If any fails, the commit is aborted
 
 bash "$REPO_ROOT/scripts/validate-skills.sh" || exit 1
 bash "$REPO_ROOT/scripts/test-root-scripts.sh" || exit 1
+bash "$REPO_ROOT/scripts/test-script-fixtures.sh" || exit 1
 EOF
 
 chmod +x "$PRE_COMMIT_HOOK"
@@ -92,8 +103,8 @@ chmod +x "$PRE_COMMIT_HOOK"
 log_info "Installed pre-commit hook"
 echo ""
 echo "Hook installed: $PRE_COMMIT_HOOK"
-echo "This will run scripts/validate-skills.sh and scripts/test-root-scripts.sh"
-echo "before each commit."
+echo "This will run scripts/validate-skills.sh, scripts/test-root-scripts.sh,"
+echo "and scripts/test-script-fixtures.sh before each commit."
 echo ""
 echo "To test it manually:"
 echo "  bash .git/hooks/pre-commit"

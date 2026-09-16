@@ -78,6 +78,24 @@ script and re-wires `settings.json` (without displacing an existing
 
 The drift checker detects the same issue that motivated this repo's own ADR-1: the installed `~/.claude/usage-statusline.sh` once hardcoded `/home/coding` while the repo's version generalized to `$HOME` — silent drift that went unnoticed until manual inspection.
 
+## Testing
+
+Three suites run before each commit (via the pre-commit hook installed by `scripts/install-hooks.sh`) and on every push to `main` (via the `skills-validate` Argo WorkflowTemplate, which triggers on push through the Forgejo webhook sensor):
+
+| Suite | Covers |
+|-------|--------|
+| `scripts/validate-skills.sh` | Static structure per ADR-1: frontmatter schema, reference integrity, `bash -n`, executable bits, ShellCheck baseline ratchet |
+| `scripts/test-root-scripts.sh` | Documented contracts of the root scripts: `check-installed.sh` exit codes, `install.sh` flag behavior and out-of-tree statusline install |
+| `scripts/test-script-fixtures.sh` | The per-skill `SELF-TEST.md` script fixtures: each score/scan script's heredoc fixture replayed mechanically against its pinned counts, MISSING lists, and exit codes — any mismatch fails the commit or the push |
+
+To run any of them by hand:
+
+```bash
+./scripts/test-script-fixtures.sh   # ~3s, no network, no LLM
+```
+
+The fixture suite is the regression net for the shared `lib/common.sh` extraction: every fixture passes identically against the pre- and post-extraction scripts, so a behavior change in the shared helpers (or in any scorer) surfaces as a named failing pin instead of a silent count drift. The LLM-in-the-loop functional sections of each `SELF-TEST.md` stay manual runbooks by design and are not covered here.
+
 ## Skills
 
 Each skill is a self-contained, checklist-driven artifact derived from the structural

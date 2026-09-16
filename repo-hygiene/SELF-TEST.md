@@ -33,6 +33,14 @@ test -x "$SKILL_DIR/scripts/repo_hygiene.sh" && echo "✓ Executable" || echo "�
 
 ## Script Smoke Tests
 
+The deterministic parts of this section (the seeded-violations repo below —
+text and `--json` output, clean-repo and usage exit codes — minus its old
+dead-GitHub-Actions step) run automatically via
+`scripts/test-script-fixtures.sh` at the repo root — wired into the pre-commit
+hook and the `skills-validate` Argo WorkflowTemplate, so a detector or exit-code
+drift fails before it ships. The steps here remain as the manual equivalent,
+and the manual route is the only exercise `dead-ci-workflows` gets.
+
 ```bash
 SKILL_DIR="$HOME/.claude/skills/repo-hygiene"
 
@@ -71,19 +79,11 @@ dd if=/dev/zero of=large-blob.bin bs=1M count=6 2>/dev/null
 git add large-blob.bin
 git commit -m "add large tracked file"
 
-# Create a dead GitHub Actions workflow
-mkdir -p .github/workflows
-cat > .github/workflows/test.yml <<EOF
-name: Test
-on: push
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "dead workflow"
-EOF
-git add .
-git commit -m "add dead CI workflow"
+# NOTE: no seeded .github/workflows/ fixture — creating one is prohibited in
+# this workspace (GitHub Actions are disabled estate-wide; CI is Argo), even
+# as a throwaway. The dead-ci-workflows detector is the one category this
+# fixture does not exercise; verify it manually only against a repo that
+# already carries a tracked workflow file.
 
 echo "=== Test 3: Repo with seeded violations ==="
 "$SKILL_DIR/scripts/repo_hygiene.sh"

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SELF-TEST script fixtures now run unattended** (2026-09-15) — the
+  per-skill `SELF-TEST.md` heredoc fixtures (exact counts, MISSING lists,
+  per-style inventories, exit codes) are replayed mechanically by
+  `scripts/test-script-fixtures.sh`, wired into the pre-commit hook and the
+  `skills-validate` Argo WorkflowTemplate so the pins gate every commit and
+  every push instead of living only in a manual runbook. Covers all nine
+  script-bearing skills with 125 pinned assertions; the LLM-in-the-loop
+  functional sections stay manual.
+  The suite passes identically against the pre-`lib/common.sh` scripts and the
+  extracted ones — it is the before/after net for the extraction. The
+  repo-hygiene fixture (and its `SELF-TEST.md` runbook) no longer seeds a
+  `.github/workflows/` directory, which is prohibited workspace-wide even as a
+  throwaway; `dead-ci-workflows` stays the one detector the fixture leaves
+  unexercised.
+
 ### Changed
 - **install.sh now performs usage-statusline's out-of-tree install** (2026-09-15) —
   in addition to the skill directory it deploys `~/.claude/usage-statusline.sh`
