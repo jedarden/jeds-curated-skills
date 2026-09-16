@@ -83,6 +83,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The pins were authored against GNU behavior and stay byte-identical.
   Hardening the skill scripts themselves for busybox/macOS (`wc -w` × 2,
   `grep -r --include` × 1) is a deliberate follow-up, not folded in here.
+- **CI fixtures step can clone over TLS** (2026-09-16) — the first
+  push-triggered run on the Debian image (`skills-validate-p8c9v`) failed
+  before any fixture executed: bookworm's `git` package lists
+  `ca-certificates` only as a Recommends, and the step installs with
+  `--no-install-recommends`, so the container had no TLS trust store and
+  `git clone` died on certificate verification with exit 128 — ~21 s in,
+  after apt had succeeded. `validate-skills` cloned fine from the same
+  cluster because `alpine/git` carries ca-certificates as a hard
+  dependency, which is what made the failure look like a fixtures problem
+  rather than a network one. The WorkflowTemplate now installs
+  `ca-certificates` explicitly (declarative-config `79545295`); the suite
+  itself needed no change.
 
 ### Added
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
