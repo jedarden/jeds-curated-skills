@@ -32,6 +32,8 @@ The repo's other review skills attach to the flow without being part of it,
 deliberately — they are conditional or periodic, so chaining them would invent
 a sequence they don't have. Where they attach:
 
+- **`plan-gap-review`** — on any plan, spec, or design doc that needs fresh-eyes gap/contradiction polishing: typically on the freshly authored plan before the `plan-review` gate, and again after any major revision (Pre-Implementation Phase; Continuous Practices)
+- **`plan-idea-gen`** — once a plan.md exists to anchor it: after `plan-author`, when you want a wide-then-narrow idea pool for that specific plan (Pre-Implementation Phase; Continuous Practices)
 - **`adr`** — companion to `plan-review --lock`, for a decision that surfaces after the plan is locked (Cross-Cutting Skills; also the Post-Incident Workflow)
 - **`migration-runbook`** — at cutover, when the release being gated is itself a migration (Release & Operations Phase)
 - **`readme-review`** — whenever README changes, and re-checked at pre-release (Cross-Cutting Skills; Continuous Practices)
@@ -73,8 +75,8 @@ The skills auto-detect plan type from context or prompt.
 | **Spec Review** | `spec-review` | You have a PRD or requirements doc; run before writing plan |
 | **Plan Authoring** | `plan-author` | Converting brief/idea to full plan.md |
 | **Plan Review** | `plan-review` | Pre-flight check of plan.md before implementation or bead decomposition; produces a decision ledger and a `--lock` path that writes accepted decisions into the plan |
-| **Gap Analysis** | `plan-gap-review` | Iterative gap/contradiction review of plan, spec, or design doc |
-| **Idea Generation** | `plan-idea-gen` | Need large pool of ideas anchored to a specific plan.md |
+| **Gap Analysis** | `plan-gap-review` | Iterative gap/contradiction review of a plan, spec, or design doc — typically on the freshly authored plan before the `plan-review` gate, and after major revisions |
+| **Idea Generation** | `plan-idea-gen` | Once a plan.md exists to anchor it — after `plan-author` — when you need a large pool of ideas for that specific plan |
 
 ### Implementation Phase
 
