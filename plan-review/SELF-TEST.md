@@ -77,6 +77,43 @@ Also verify the zero-hit case does not crash: `printf '# Tiny\n\nWe build a thin
 
 If the counts differ, a pattern changed; update this table deliberately, never silently.
 
+## `scan-headers.sh` fixture test
+
+Same fixture document as `find-forks.sh` above — one byte-identical input pins
+both plan-review scripts.
+
+```bash
+SKILL_DIR="$HOME/.claude/skills/plan-review"
+# reuse $FIX from the find-forks fixture above
+"$SKILL_DIR/scripts/scan-headers.sh" "$FIX"
+```
+
+**Expected:**
+
+- `--- All Headers ---` lists exactly six, with line numbers: `1:# Fixture Plan`,
+  `3:## Architecture`, `9:## Decisions`, `13:## Open Questions`, `17:## Phases`,
+  `26:## ADR-001: 2026-07-20 — Ratify something after the fact` (the
+  post-Open-Questions header find-forks flags as SHADOW).
+- `--- Header Counts ---`: `H1 (# ): 1`, `H2 (## ): 5`, `H3 (### ): 0` — followed by
+  a bare `0` line. **Known quirk:** the header-count helper computes
+  `$(grep -c … || echo 0)`, and `grep -c` already prints `0` before exiting 1, so
+  every zero level emits a second, bare `0`. Pinned as a quirk, not silently
+  "fixed" (same precedent as usage-statusline's empty-cache pin); fixing the
+  helper is fine — update this section and the
+  `scripts/test-script-fixtures.sh` fixture in the same commit.
+- `--- Key Section Presence ---`: exactly 2 PRESENT — `Architecture Overview` and
+  `ADRs / Design Decisions` — and 17 MISSING. The document deliberately has no
+  Non-Goals or Glossary section, so those verdicts are MISSING.
+- `--- File Stats ---`: `Total lines : 27`, `Total words : 136`,
+  `Total chars : 821` (bytes — the em-dashes and the arrow are multibyte).
+- No-header document: `printf 'plain prose only\nno headers at all\n' > t.md`
+  then `scan-headers.sh t.md` → `--- All Headers ---` prints `(no headers found)`,
+  exit 0 — the `|| echo` fallback reports, it does not crash.
+- No argument / missing file: `Usage: scan-headers.sh <plan-file>`, exit 1.
+
+If any pin differs, `scan-headers.sh` (or the shared header-count helper it
+calls) changed; update this section and the fixture suite together, deliberately.
+
 ## Corpus smoke tests (if the research corpus is present)
 
 ```bash

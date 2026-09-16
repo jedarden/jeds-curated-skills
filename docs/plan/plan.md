@@ -71,6 +71,27 @@ status, so the `|| exit 0` guard is dead code for that path — pinned as a know
 quirk, not silently "fixed"), stale cache ⇒ renders stale values, and
 no-`weekly_scoped` ⇒ third window omitted.
 
+**Update 2026-09-16 — the regression net gained a coverage ratchet.** Replaying
+pins is only half a net: `scripts/test-script-fixtures.sh` failed when a pin
+*drifted*, but nothing failed when a new `score-*`/`scan-*`-class script shipped
+without one — the pre-2026-09-15 "ships silently" failure mode re-opened for
+future scripts. The suite now enumerates every skill script in the fixture
+families (`score-*`, `scan-*`, `find-*`, `collect-*`, `*_hygiene.sh`) and fails
+unless each is replayed there (a `skill_script <skill> <script>` call site is
+the pin) or listed in its `FIXTURE_EXEMPT` with a reason — a count floor keeps
+the enumeration itself from going blind. The ratchet's first run caught the one
+live gap: `plan-review/scripts/scan-headers.sh` was wired into SKILL.md but
+never pinned; it now has a fixture (same document as `find-forks.sh`, so both
+plan-review scripts are pinned against one byte-identical input) that also pins
+the `grep -c || echo 0` doubled-zero quirk of the shared header-count helper as
+known behavior. `plan-review/scripts/score-plan.sh` — deprecated and
+unreferenced — is the one exemption. Known remaining gap, recorded here so it is
+not rediscovered: `lib/common.sh` still has no direct unit tests; its helpers
+are pinned only where the script fixtures happen to exercise them, and a direct
+lib test is blocked on the lib extraction landing (the fixture suite
+deliberately holds against both the pre- and post-extraction trees, so it
+cannot source the lib itself).
+
 ## Architecture notes
 
 - Every skill follows the same shape: `SKILL.md` (frontmatter: `name`, `description`,

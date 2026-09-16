@@ -15,6 +15,7 @@
 # SELF-TEST.md section it mirrors — update the two together, deliberately):
 #
 #   plan-review        find-forks.sh    pinned summary counts + zero-hit + usage
+#   plan-review        scan-headers.sh  header census + section verdicts + stats + usage
 #   spec-review        score-spec.sh    fixtures 6/13, 13/13, 0/13 + usage
 #   plan-author        score-draft.sh   30/36 + exact backfill list + thin + usage
 #   readme-review      score-readme.sh  12/14 + type ladder + placeholder + usage
@@ -23,6 +24,19 @@
 #   release-readiness  scan-release.sh  fixture-repo facts + dirty tree + usage
 #   diff-review        collect-diff.sh  local-repo modes (no network) + not-a-repo
 #   repo-hygiene       repo_hygiene.sh  seeded violations + clean repo + JSON + usage
+#
+# Replaying pins is only half the net: it fails when a pin EXISTS and drifts,
+# so a brand-new score-*/scan-* script with no fixture would ship silently —
+# the exact pre-2026-09-15 failure mode this net exists for, re-opened for
+# future scripts. The fixture-coverage ratchet (ratchet_fixture_coverage,
+# run first in main) closes that: it enumerates every <skill>/scripts/*.sh
+# in the fixture families (score-*, scan-*, find-*, collect-*, *_hygiene.sh)
+# and fails unless each is replayed here (a `skill_script <skill> <script>`
+# call site is the pin) or listed in FIXTURE_EXEMPT with a reason. A count
+# floor keeps the enumeration itself honest. A genuinely new script family
+# means widening the case patterns — the class list is one deliberate line.
+# usage-statusline's script stays out of scope: its smoke test is a runbook
+# in its own SELF-TEST.md, a different surface from this suite's contract.
 #
 # Not automated, by design: the trigger-phrase and functional (LLM-in-the-loop)
 # sections of each SELF-TEST.md stay manual runbooks, and plan-review's corpus
@@ -51,6 +65,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Drop the ambient git context. The pre-commit hook runs this suite with git's
+# environment exported — for a partial commit (pathspec/staged-paths) that
+# includes GIT_INDEX_FILE pointing at the commit's temporary index, whose
+# entries reference THIS repo's object store. Every git call below runs inside
+# a throwaway fixture repo; inheriting those variables makes a fixture repo
+# build trees from the parent repo's index and die with "invalid object …
+# Error building trees". The suite treats the checkout itself as read-only
+# files and never runs git against it, so dropping the context here is safe.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -150,6 +175,69 @@ skill_script() { # skill script... -> path inside this checkout
 }
 
 # ---------------------------------------------------------------------------
+# Fixture-coverage ratchet — a new fixture-class script without a pin fails
+# ---------------------------------------------------------------------------
+
+# Scripts deliberately left unpinned, keyed by repo-relative path with the
+# reason alongside. Keys are full paths, so a same-named script in another
+# skill does NOT inherit an exemption (the pin check is `<skill> <script>`,
+# which a path-shaped entry can never match). Deleting an exempted script
+# means deleting its entry: a stale entry fails the ratchet.
+FIXTURE_EXEMPT=(
+  'plan-review/scripts/score-plan.sh' # deprecated + unreferenced: SKILL.md wires only find-forks.sh and scan-headers.sh, and plan-review/SELF-TEST.md "Structure" pins that state
+)
+
+# Fixture-class scripts in existence today. Raise by one when adding a script
+# (in the same commit as its fixture); lower it only deliberately when
+# removing one. A drop to zero-or-few without a matching edit means the
+# enumeration broke, not that coverage shrank.
+FIXTURE_CLASS_FLOOR=11
+
+ratchet_fixture_coverage() {
+  echo ""
+  echo "=== Fixture-coverage ratchet ==="
+
+  local this_script="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+  local skill_dir script base rel
+  local pinned=0 exempted=0 total=0
+
+  for skill_dir in "$REPO_ROOT"/*/; do
+    [[ -f "${skill_dir}SKILL.md" ]] || continue
+    for script in "${skill_dir}"scripts/*.sh; do
+      [[ -f "$script" ]] || continue
+      base="$(basename "$script")"
+      case "$base" in
+        score-*.sh | scan-*.sh | find-*.sh | collect-*.sh | *_hygiene.sh) ;;
+        *) continue ;;
+      esac
+      rel="${script#"$REPO_ROOT/"}"
+      total=$((total + 1))
+      if grep -qF -- "$(basename "$skill_dir") $base" "$this_script"; then
+        pinned=$((pinned + 1))
+        log_pass "ratchet: $rel pinned in this suite"
+      elif [[ " ${FIXTURE_EXEMPT[*]} " == *" $rel "* ]]; then
+        exempted=$((exempted + 1))
+        log_pass "ratchet: $rel exempt (FIXTURE_EXEMPT)"
+      else
+        log_fail "ratchet: $rel has no fixture pin — add a replayed fixture here (mirrored in its SELF-TEST.md) or a reasoned FIXTURE_EXEMPT entry"
+      fi
+    done
+  done
+
+  local entry
+  for entry in "${FIXTURE_EXEMPT[@]}"; do
+    if [[ ! -f "$REPO_ROOT/$entry" ]]; then
+      log_fail "ratchet: stale FIXTURE_EXEMPT entry — $entry does not exist (remove it)"
+    fi
+  done
+  if ((total < FIXTURE_CLASS_FLOOR)); then
+    log_fail "ratchet: enumerated $total fixture-class script(s), floor is $FIXTURE_CLASS_FLOOR — the enumeration or the class patterns broke"
+  fi
+
+  echo "  fixture-class scripts: $total ($pinned pinned, $exempted exempt; floor $FIXTURE_CLASS_FLOOR)"
+}
+
+# ---------------------------------------------------------------------------
 # plan-review — find-forks.sh (SELF-TEST.md "find-forks.sh fixture test")
 # ---------------------------------------------------------------------------
 
@@ -205,6 +293,58 @@ EOF
 
   run_capture bash "$ff"
   assert_rc 2 "usage error (no file) exits 2"
+
+  # --- scan-headers.sh against the SAME fixture document (SELF-TEST.md
+  # "scan-headers.sh fixture test"): one byte-identical input pins both
+  # plan-review scripts, so a header-taxonomy or verdict drift shows up here.
+  local sh
+  sh="$(skill_script plan-review scan-headers.sh)"
+
+  run_capture bash "$sh" "$fix"
+  assert_rc 0 "header scan exits 0"
+  assert_has "census: H1 with line number" "1:# Fixture Plan"
+  assert_has "census: ## Architecture at line 3" "3:## Architecture"
+  assert_has "census: ## Decisions at line 9" "9:## Decisions"
+  assert_has "census: ## Open Questions at line 13" "13:## Open Questions"
+  assert_has "census: ## Phases at line 17" "17:## Phases"
+  assert_has "census: ## ADR-001 at line 26 (the post-Open-Questions SHADOW header)" \
+    "26:## ADR-001: 2026-07-20 — Ratify something after the fact"
+  assert_eq  "census lists exactly 6 headers" \
+    "$(grep -cE '^[0-9]+:#' <<< "$REPLY" || true)" "6"
+  assert_has "counts: H1 pinned" "H1 (# ): 1"
+  assert_has "counts: H2 pinned" "H2 (## ): 5"
+  assert_regex "counts: H3 zero" '^H3 \(### \): 0$'
+  # Known quirk, pinned on purpose (the usage-statusline empty-cache precedent):
+  # the header-count helper computes `$(grep -c ... || echo 0)`, and grep -c
+  # already prints 0 before exiting 1, so every zero level emits a bare second
+  # `0` line. Fixing the helper is fine — this pin then forces the deliberate
+  # fixture + SELF-TEST.md update instead of swallowing the change silently.
+  assert_regex "counts: stray doubled zero after H3 (grep -c || echo 0 quirk)" '^0$'
+  assert_eq  "verdicts: exactly 2 PRESENT" \
+    "$(grep -c '^  PRESENT' <<< "$REPLY" || true)" "2"
+  assert_eq  "verdicts: exactly 17 MISSING" \
+    "$(grep -c '^  MISSING' <<< "$REPLY" || true)" "17"
+  assert_block "PRESENT verdicts exact" "  PRESENT" '  PRESENT  Architecture Overview
+  PRESENT  ADRs / Design Decisions'
+  assert_has "verdict shape: MISSING names the section (doc deliberately has no glossary)" \
+    "  MISSING  Glossary"
+  assert_has "stats: 27 lines pinned" "Total lines : 27"
+  assert_has "stats: 136 words pinned" "Total words : 136"
+  assert_has "stats: 821 chars pinned (bytes — em-dashes/arrow are multibyte)" "Total chars : 821"
+
+  # No-header document: the `grep || echo` fallback reports, it does not
+  # crash under set -e. The triple doubled zeros in the count block are the
+  # same quirk pinned above — deliberately not re-pinned here.
+  printf 'plain prose only\nno headers at all\n' > "$WORK/no-headers.md"
+  run_capture bash "$sh" "$WORK/no-headers.md"
+  assert_rc 0 "no-header doc exits 0"
+  assert_has "no-header doc reports (no headers found)" "(no headers found)"
+
+  run_capture bash "$sh"
+  assert_rc 1 "usage error (no file) exits 1"
+  assert_has  "usage error prints usage" "Usage: scan-headers.sh <plan-file>"
+  run_capture bash "$sh" "$WORK/nope.md"
+  assert_rc 1 "usage error (missing file) exits 1"
 }
 
 # ---------------------------------------------------------------------------
@@ -873,6 +1013,10 @@ main() {
   echo "SELF-TEST script-fixture runs for jeds-curated-skills"
   echo "Repo root: $REPO_ROOT"
   echo "(fixtures run against this checkout, not an installed copy)"
+
+  # Coverage before replay: an unpinned script is announced ahead of any
+  # fixture noise, and its failure still lands in the shared summary below.
+  ratchet_fixture_coverage
 
   test_plan_review
   test_spec_review

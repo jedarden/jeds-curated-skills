@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fixture-coverage ratchet** (2026-09-16) — `scripts/test-script-fixtures.sh`
+  no longer lets a new `score-*`/`scan-*`-class script ship unpinned. Replaying
+  fixtures only failed when a pin existed and drifted; a brand-new script with
+  no fixture shipped silently — the pre-2026-09-15 failure mode re-opened for
+  future scripts. The suite now enumerates every skill script in the fixture
+  families (`score-*`, `scan-*`, `find-*`, `collect-*`, `*_hygiene.sh`) and
+  fails unless each is replayed there or listed in `FIXTURE_EXEMPT` with a
+  reason (`plan-review/scripts/score-plan.sh`, deprecated and unreferenced, is
+  the only entry), with a count floor so the enumeration itself cannot go
+  blind. The ratchet's first run caught the one live gap:
+  `plan-review/scripts/scan-headers.sh` was wired into the skill but never
+  pinned — now replayed against the same fixture document as `find-forks.sh`
+  (header census, PRESENT/MISSING verdicts, file stats, the
+  `grep -c || echo 0` doubled-zero quirk pinned as known behavior, usage
+  errors). 125 → 160 pinned assertions.
 - **SELF-TEST script fixtures now run unattended** (2026-09-15) — the
   per-skill `SELF-TEST.md` heredoc fixtures (exact counts, MISSING lists,
   per-style inventories, exit codes) are replayed mechanically by
