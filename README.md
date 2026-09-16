@@ -108,7 +108,8 @@ The push path itself has an external heartbeat: run `scripts/check-push-ci.sh`
 to confirm the newest non-CI-authored `origin/main` push produced a
 sensor-submitted `skills-validate` workflow in `iad-ci`. It waits through a
 15-minute delivery grace window by default; use `--grace-minutes 0` when the
-push is already old enough to judge.
+push is already old enough to judge. A passing check covers the Forgejo route,
+JetStream delivery, sensor trigger, and Workflow submission together.
 
 To run any of them by hand:
 
