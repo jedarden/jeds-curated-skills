@@ -77,6 +77,17 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 
+# The word-count pins assume UTF-8-aware wc: a spaced multibyte character
+# (em-dash, arrow) counts as its own word. coreutils ≤ 9.1 in the C locale —
+# debian:bookworm, the skills-validate image — counts bytes instead and folds
+# each into a neighbor (131 vs the pinned 136 on the plan-review fixture; the
+# same count busybox produced, see CHANGELOG 2026-09-16). C.UTF-8 is built
+# into glibc ≥ 2.35 and needs no locales package; set it when the host has it
+# so the pins hold on any GNU box regardless of ambient locale.
+if locale -a 2>/dev/null | grep -qi '^C\.utf8$'; then
+  export LC_ALL=C.UTF-8
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'

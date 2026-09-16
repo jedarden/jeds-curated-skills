@@ -93,8 +93,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cluster because `alpine/git` carries ca-certificates as a hard
   dependency, which is what made the failure look like a fixtures problem
   rather than a network one. The WorkflowTemplate now installs
-  `ca-certificates` explicitly (declarative-config `79545295`); the suite
-  itself needed no change.
+  `ca-certificates` explicitly (declarative-config `79545295`).
+- **Fixture word counts need a UTF-8 locale** (2026-09-16) — the next
+  push-triggered run (`skills-validate-nvctk`) got past the clone and failed
+  two `wc -w` pins: coreutils 9.1 in the C locale (bookworm's container
+  default) counts bytes, so each spaced multibyte character — the
+  plan-review fixture's four em-dashes and one arrow — folds into a
+  neighbor: 131 words vs the pinned 136, the same count busybox produced
+  above. The pins assume UTF-8-aware wc, where a spaced dash is its own
+  word; the authoring box's newer coreutils (9.11) is multibyte-aware even
+  in the C locale, which is why the suite stayed green there.
+  `scripts/test-script-fixtures.sh` now sets `LC_ALL=C.UTF-8` when the host
+  provides it (glibc ≥ 2.35 builds it in, no `locales` package needed),
+  making the suite locale-hermetic on any GNU box; all 160 pins verified
+  green in a `debian:bookworm-slim` container before the re-push.
 
 ### Added
 - Version field to all skill frontmatter (1.0.0 initial version for all 16 skills)
