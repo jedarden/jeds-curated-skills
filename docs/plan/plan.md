@@ -42,10 +42,34 @@ pinned `find-forks.sh` counts, per ADR-2), `diff-review` and `repo-hygiene`, and
 exact expected counts (score, MISSING list, per-style inventory, exit codes) plus documented
 grep quirks, so the `lib/common.sh` extraction has a before/after net — the scripts test from
 a repo checkout, since installed copies lag and score scripts source `../../lib/common.sh`.
-The functional, LLM-in-the-loop sections remain manual runbooks. Still uncovered: the
+The functional, LLM-in-the-loop sections remain manual runbooks.
+
+**Update 2026-09-15 — every skill now has a SELF-TEST.md.** The last seven
+uncovered skills are covered in two shapes matched to their surface. The six
 prose-only skills (`adr`, `migration-runbook`, `plan-gap-review`, `plan-idea-gen`,
-`postmortem`, `threat-model` — their surface is checklists, not scripts) and
-`usage-statusline`, whose single script is a live statusline component, not a scorer.
+`postmortem`, `threat-model` — checklists and flows, not scripts) each got a
+manual runbook built around a **fixture document with a planted-defect/expected-
+findings inventory**: a weak ADR pinned to 4 PRESENT / 3 PARTIAL / 5 MISSING with
+a named STRAWMAN, an unsafe migration runbook that must fail all five
+non-negotiables (0/1/11), a plan with seven enumerable gaps plus a clean-doc
+control for the loop's exit condition, an ideation run whose pins are mechanical
+(inline-only tool list, ambiguity STOP, ledger append, content-shape), a
+blameless-violation draft pinned to 0/1/13 plus a shell-verifiable
+CandidateLesson hash check (`sha256(fingerprint+scope)[:16]` = filename), and a
+thin threat model pinned to 3 PRESENT / 6 PARTIAL / 6 MISSING. Mechanical pins
+(quote-the-line violations, blank cells, totals) are hard; judgment items may
+flex one step with an argument — a moved hard pin means the checklist changed
+deliberately. `usage-statusline` got a **scriptable smoke test** that runs the
+statusline script against a fixture `$HOME` (no creds ⇒ no network path) and
+asserts exit 0 + a single non-empty line with no trailing newline (byte-checked),
+pinned window labels/percents, and the async commit-count warm (run 1 pins the
+`⎇` segment only — the background scan races the first render — with the pinned
+`⎇ 2` on run 2 after a bounded wait on the warmed cache); degraded-cache cases
+pin missing-cache ⇒ silent exit 0,
+empty/shapeless cache ⇒ non-zero exit through `set -u` (the `eval` masks jq's
+status, so the `|| exit 0` guard is dead code for that path — pinned as a known
+quirk, not silently "fixed"), stale cache ⇒ renders stale values, and
+no-`weekly_scoped` ⇒ third window omitted.
 
 ## Architecture notes
 
