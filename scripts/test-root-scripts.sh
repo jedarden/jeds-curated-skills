@@ -50,6 +50,21 @@
 #     usage-statusline install, which is the shape of the machine where
 #     ADR-1's hardcoded /home/coding path was found live
 #
+#   check-push-ci.sh push-CI heartbeat (scripts/check-push-ci.sh):
+#     exits 0 when a sensor-submitted (generateName exactly
+#     "skills-validate-", never the manual "-manual-" prefix) workflow was
+#     created at/after the newest non-CI-authored commit on origin/main;
+#     1 is the alarm code (no workflow since the push, or nothing on
+#     record); 2 is environmental (bad usage, no origin/main, kubectl
+#     failure, malformed listing) and must never masquerade as an alarm —
+#     including the empty-listing case, where command substitution's
+#     trailing-newline stripping collapses the jq output and a naive
+#     array read dies "unbound variable" under set -u; 3 means the push
+#     is younger than the grace window and kubectl is never consulted.
+#     Reference-walk and CI-author skip mirror the sensor's own filter
+#     (body.head_commit.author.name != "Argo Workflows CI"). Runs against
+#     a fixture bare origin + clone with fixed commit dates and a fake
+#     kubectl shim on PATH — the real cluster is never contacted.
 #
 # Everything runs against a temporary HOME with a fake ~/.claude/skills/;
 # the real HOME is never read or written. Usage:
@@ -74,13 +89,14 @@ INSTALL="$REPO_ROOT/install.sh"
 
 # Drop the ambient git context — same fix as test-script-fixtures.sh, for the
 # same reason: the pre-commit hook runs this suite with git's environment
-# exported, and fixture suites below build throwaway git repos whose git
-# calls must resolve inside the fixture, not in this repo. Inheriting GIT_DIR
-# makes fixture `git log origin/main` walks read THIS repo's history instead
-# of the fixture's, flipping contracts that depend on fixture commit dates
-# (observed live: the failure appears only when the suite runs from the
-# hook). The suite treats the checkout as read-only files and never runs git
-# against it, so dropping the context here is safe.
+# exported, and the push-CI fixture below builds a throwaway bare origin +
+# clone whose git calls must resolve inside the fixture, not in this repo.
+# Inheriting GIT_DIR made the heartbeat's `git log origin/main` walk read THIS
+# repo's history — its newest non-CI-authored commit is hours old, so the
+# fixture's 2026 workflow timestamps all fell "before the push" and the two
+# exit-0 contracts failed only when run from the hook. The suite treats the
+# checkout as read-only files and never runs git against it, so dropping the
+# context here is safe.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 
@@ -219,6 +235,99 @@ new_inline_fixture_repo() {
   fi
   cp -r "$REPO_ROOT/$LIB_FIXTURE_SKILL" "$FAKE_REPO/$LIB_FIXTURE_SKILL"
 }
+
+# --- check-push-ci.sh fixtures ------------------------------------------------
+
+# Fixture subject: the push-CI heartbeat. A bare origin + a clone with
+# deterministic commit dates, and a fake kubectl first on PATH that replays a
+# canned workflow listing. The real endpoint is never contacted: the script's
+# server override points at a dead address, so a shim bypass fails fast
+# instead of silently passing.
+
+PUSH_CI_DIR=""
+PUSH_CI_SHIM=""
+PUSH_CI_MARKER=""
+# The sensor drops pushes authored by this name; the heartbeat must skip the
+# same commits when picking its reference.
+PUSH_CI_CI_AUTHOR="Argo Workflows CI"
+PUSH_CI_AUTHOR="Fixture Author"
+
+# Emit a workflow-listing JSON. Each argument is "name|generateName|timestamp";
+# no arguments yields the empty listing (the heartbeat's total-0 path).
+write_wf_listing() {
+  local out="$PUSH_CI_DIR/listing.json" item first=1
+  printf '{"apiVersion":"argoproj.io/v1alpha1","kind":"Workflow","items":[' >"$out"
+  for item in "$@"; do
+    ((first)) || printf ',' >>"$out"
+    first=0
+    local name gen ts
+    IFS='|' read -r name gen ts <<<"$item"
+    printf '{"metadata":{"name":%s,"generateName":%s,"creationTimestamp":%s},"spec":{}}' \
+      "$(jq -Rn --arg v "$name" '$v')" \
+      "$(jq -Rn --arg v "$gen" '$v')" \
+      "$(jq -Rn --arg v "$ts" '$v')" >>"$out"
+  done
+  printf ']}' >>"$out"
+}
+
+new_push_ci_fixture() {
+  PUSH_CI_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jcs-push-ci.XXXXXX")"
+  if [[ "$PUSH_CI_DIR" != "${TMPDIR:-/tmp}"/* ]]; then
+    echo -e "${RED}push-ci fixture escaped tmp: $PUSH_CI_DIR${NC}" >&2
+    exit 1
+  fi
+  FAKE_REPOS+=("$PUSH_CI_DIR")
+  git init -q --bare -b main "$PUSH_CI_DIR/origin.git"
+  git clone -q "$PUSH_CI_DIR/origin.git" "$PUSH_CI_DIR/clone" 2>/dev/null
+  push_ci_commit "base" "$PUSH_CI_AUTHOR" "2026-09-14T12:00:00Z"
+  push_ci_commit "ci-tipped" "$PUSH_CI_CI_AUTHOR" "2026-09-14T13:00:00Z"
+  git -C "$PUSH_CI_DIR/clone" push -q -u origin main
+}
+
+# Commit with deterministic author/committer identity and dates. The identity
+# must go through the environment because a pre-commit hook inherits Git's
+# outer commit identity, which would otherwise turn the synthetic CI commit
+# into a human-authored one. The dates go through the environment because -c
+# cannot set them.
+push_ci_commit() {
+  local msg="$1" author="$2" when="$3"
+  GIT_AUTHOR_NAME="$author" GIT_AUTHOR_EMAIL=fixture@example.com \
+    GIT_COMMITTER_NAME="$author" GIT_COMMITTER_EMAIL=fixture@example.com \
+    GIT_AUTHOR_DATE="$when" GIT_COMMITTER_DATE="$when" \
+    git -C "$PUSH_CI_DIR/clone" \
+    -c user.name="$author" -c user.email=fixture@example.com \
+    commit -q --allow-empty -m "$msg"
+}
+
+# Fake kubectl: records that it ran, then either fails or replays the canned
+# listing. Baked as a standalone script so PATH shimming needs nothing else.
+new_push_ci_shim() {
+  PUSH_CI_SHIM="$(mktemp -d "${TMPDIR:-/tmp}/jcs-push-ci-shim.XXXXXX")"
+  FAKE_REPOS+=("$PUSH_CI_SHIM")
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf '[[ -n "${PUSH_CI_KUBECTL_CALLED:-}" ]] && touch "${PUSH_CI_KUBECTL_CALLED}"\n'
+    printf 'if [[ -n "${PUSH_CI_KUBECTL_FAIL:-}" ]]; then\n'
+    printf '  echo "kubectl shim: intentional failure" >&2\n  exit 1\nfi\n'
+    printf 'cat %q\n' "$PUSH_CI_DIR/listing.json"
+  } >"$PUSH_CI_SHIM/kubectl"
+  chmod +x "$PUSH_CI_SHIM/kubectl"
+}
+
+# Run the heartbeat inside the fixture clone with the shim first on PATH.
+run_push_ci() {
+  PUSH_CI_MARKER="$PUSH_CI_DIR/.kubectl-called"
+  rm -f "$PUSH_CI_MARKER"
+  (
+    cd "$PUSH_CI_DIR/clone" || exit 2
+    export PATH="$PUSH_CI_SHIM:$PATH"
+    export SKILLS_CI_KUBECTL_SERVER="http://push-ci-fixture.invalid:1"
+    export PUSH_CI_KUBECTL_CALLED="$PUSH_CI_MARKER"
+    bash "$REPO_ROOT/scripts/check-push-ci.sh" "$@"
+  )
+}
+
+kubectl_was_called() { [[ -e "$PUSH_CI_MARKER" ]]; }
 
 # Assert a command exits with the expected code; print its tail on failure.
 expect_exit() {
@@ -617,6 +726,76 @@ test_statusline_contracts() {
     run_check_installed usage-statusline
 }
 
+# --- check-push-ci.sh push-CI heartbeat --------------------------------------
+
+test_push_ci_contracts() {
+  echo ""
+  echo "=== check-push-ci.sh push-CI heartbeat ==="
+  new_push_ci_fixture
+  new_push_ci_shim
+
+  # Usage surface.
+  expect_exit 0 "--help exits 0" run_push_ci --help
+  expect_exit 2 "unknown option exits 2" run_push_ci --nonsense
+  expect_exit 2 "missing --grace-minutes value exits 2" run_push_ci --grace-minutes
+  expect_exit 2 "negative --grace-minutes value exits 2" run_push_ci --grace-minutes=-1
+
+  # The reference walk skips a CI-authored tip (mirrors the sensor filter):
+  # HEAD is authored by "Argo Workflows CI" at 13:00, so the reference is the
+  # human commit at 12:00. A 12:30 workflow is OLDER than the tip but newer
+  # than the reference — it verifies only if the skip happened.
+  write_wf_listing "skills-validate-abc123|skills-validate-|2026-09-14T12:30:00Z"
+  expect_exit 0 "CI-authored tip skipped to its parent (12:30 wf verifies against 12:00 ref)" \
+    run_push_ci
+
+  # Manual runs must not count: only generateName exactly "skills-validate-"
+  # proves the webhook path; a newer "skills-validate-manual-" run plus an
+  # older sensor run must still fail.
+  write_wf_listing \
+    "skills-validate-old|skills-validate-|2026-09-14T11:00:00Z" \
+    "skills-validate-manual-new|skills-validate-manual-|2026-09-14T14:00:00Z"
+  expect_exit 1 "manual run is not mistaken for a sensor delivery" run_push_ci
+
+  # Heartbeat OK: sensor workflow newer than the reference commit, stamped
+  # with fractional seconds (the API server occasionally emits them — the
+  # parse must strip, not choke).
+  write_wf_listing "skills-validate-fract|skills-validate-|2026-09-14T12:30:00.123456Z"
+  expect_exit 0 "sensor workflow at/after reference commit → 0" run_push_ci
+
+  # Heartbeat FAIL: newest sensor workflow predates the reference push.
+  write_wf_listing "skills-validate-stale|skills-validate-|2026-09-14T11:30:00Z"
+  expect_exit 1 "no workflow since the reference push → 1 (the alarm code)" run_push_ci
+
+  # Nothing on record at all: the empty listing collapses under command
+  # substitution's trailing-newline stripping — must be the alarm (1), not a
+  # crash, and not an environmental 2.
+  write_wf_listing
+  expect_exit 1 "zero sensor workflows on record → 1 (not an unbound-variable crash)" run_push_ci
+
+  # Environmental failures are 2, never the alarm code.
+  write_wf_listing "skills-validate-abc123|skills-validate-|2026-09-14T12:30:00Z"
+  PUSH_CI_KUBECTL_FAIL=1 expect_exit 2 "kubectl failure → 2 (environmental)" run_push_ci
+  unset PUSH_CI_KUBECTL_FAIL # must not leak into the assertions below
+  printf '{"kind":"Workflow","spec":{}}' >"$PUSH_CI_DIR/listing.json" # no .items
+  expect_exit 2 "malformed listing → 2 (environmental)" run_push_ci
+
+  # A repo without origin/main is environmental, not an alarm.
+  expect_exit 2 "no origin/main → 2" bash -c \
+    "cd '$PUSH_CI_DIR' && mkdir -p orphan && cd orphan &&
+     git init -q -b main . &&
+     PATH='$PUSH_CI_SHIM:$PATH' SKILLS_CI_KUBECTL_SERVER='http://push-ci-fixture.invalid:1' \
+     bash '$REPO_ROOT/scripts/check-push-ci.sh'"
+
+  # Grace window: a too-recent push is not judgeable (3) and must not reach
+  # kubectl at all.
+  push_ci_commit "just-now" "$PUSH_CI_AUTHOR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  git -C "$PUSH_CI_DIR/clone" push -q origin main
+  write_wf_listing "skills-validate-abc123|skills-validate-|2026-09-14T12:30:00Z"
+  expect_exit 3 "push younger than the grace window → 3" run_push_ci --grace-minutes 60
+  expect_ok "grace-window run never consulted kubectl" \
+    test ! -e "$PUSH_CI_DIR/.kubectl-called"
+}
+
 main() {
   echo "Root-script contract tests for jeds-curated-skills"
   echo "Repo root: $REPO_ROOT"
@@ -627,6 +806,7 @@ main() {
   test_install_contracts
   test_install_hooks_contracts
   test_statusline_contracts
+  test_push_ci_contracts
 
   echo ""
   echo "========================================"
