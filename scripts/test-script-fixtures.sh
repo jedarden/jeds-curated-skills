@@ -83,8 +83,9 @@ unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 # each into a neighbor (131 vs the pinned 136 on the plan-review fixture; the
 # same count busybox produced, see CHANGELOG 2026-09-16). C.UTF-8 is built
 # into glibc ≥ 2.35 and needs no locales package; set it when the host has it
-# so the pins hold on any GNU box regardless of ambient locale.
-if locale -a 2>/dev/null | grep -qi '^C\.utf8$'; then
+# so the pins hold on any GNU box regardless of ambient locale. glibc emits
+# both C.utf8 and C.UTF-8 spellings across distributions.
+if locale -a 2>/dev/null | grep -Eqi '^C\.(utf8|utf-8)$'; then
   export LC_ALL=C.UTF-8
 fi
 
