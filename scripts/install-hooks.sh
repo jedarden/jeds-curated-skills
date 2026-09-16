@@ -4,7 +4,7 @@
 #
 # Installs a git pre-commit hook that runs scripts/validate-skills.sh (skill
 # bundle validation, per ADR-1), scripts/test-root-scripts.sh (contract
-# tests for check-installed.sh's exit codes and install.sh's flag behavior),
+# tests for the root scripts, including this script's own install contract),
 # and scripts/test-script-fixtures.sh (automated runs of the per-skill
 # SELF-TEST.md script fixtures — the regression net for the score/scan
 # scripts) before each commit, catching structural and behavioral drift

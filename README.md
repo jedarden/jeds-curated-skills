@@ -85,7 +85,7 @@ Three suites run before each commit (via the pre-commit hook installed by `scrip
 | Suite | Covers |
 |-------|--------|
 | `scripts/validate-skills.sh` | Static structure per ADR-1: frontmatter schema, reference integrity, `bash -n`, executable bits, ShellCheck baseline ratchet |
-| `scripts/test-root-scripts.sh` | Documented contracts of the root scripts: `check-installed.sh` exit codes, `install.sh` flag behavior and out-of-tree statusline install |
+| `scripts/test-root-scripts.sh` | Documented contracts of the root scripts: `check-installed.sh` exit codes, `install.sh` flag behavior and out-of-tree statusline install, `install-hooks.sh` pre-commit hook install |
 | `scripts/test-script-fixtures.sh` | The per-skill `SELF-TEST.md` script fixtures: each score/scan script's heredoc fixture replayed mechanically against its pinned counts, MISSING lists, and exit codes — any mismatch fails the commit or the push |
 
 To run any of them by hand:

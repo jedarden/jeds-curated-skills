@@ -2,8 +2,8 @@
 #
 # test-root-scripts.sh - Contract tests for the repo's own root scripts
 #
-# The README documents two contracts this suite pins down so they cannot
-# silently change:
+# The README documents the contracts below; this suite pins them down so
+# they cannot silently change:
 #
 #   scripts/check-installed.sh exit codes:
 #     0  installed copy matches the repo (no drift)
@@ -17,6 +17,14 @@
 #     <name>...    selective install: installs only the named skills and
 #                  leaves other installed skills untouched
 #     --all        installs every skill --list reports
+#
+#   install-hooks.sh pre-commit hook install:
+#     writes an executable .git/hooks/pre-commit into the repo that contains
+#     it, invoking exactly the three documented suites (validate-skills.sh,
+#     test-root-scripts.sh, test-script-fixtures.sh); a re-run leaves the
+#     hook byte-identical; an older two-suite hook is upgraded in place; a
+#     foreign pre-existing hook is backed up to pre-commit.backup before the
+#     documented hook replaces it; no .git/hooks means exit 1
 #
 #   install.sh usage-statusline out-of-tree install (the one skill whose
 #   runtime artifact lives outside ~/.claude/skills/):
@@ -77,6 +85,8 @@ FAILURES=()
 FAKE_HOMES=()
 FAKE_HOME=""
 FAKE_SKILLS=""
+FAKE_REPOS=()
+FAKE_REPO=""
 
 log_pass() { echo -e "${GREEN}  ✓ $1${NC}"; PASSED=$((PASSED + 1)); }
 log_fail() {
@@ -86,9 +96,9 @@ log_fail() {
 }
 
 cleanup() {
-  local home
-  for home in "${FAKE_HOMES[@]}"; do
-    rm -rf "$home"
+  local dir
+  for dir in "${FAKE_HOMES[@]}" "${FAKE_REPOS[@]}"; do
+    rm -rf "$dir"
   done
 }
 trap cleanup EXIT
@@ -105,6 +115,34 @@ new_fake_home() {
   FAKE_SKILLS="$FAKE_HOME/.claude/skills"
   mkdir -p "$FAKE_SKILLS"
   FAKE_HOMES+=("$FAKE_HOME")
+}
+
+# Fresh skeleton repo for the install-hooks.sh contracts. The installer
+# derives its target .git/hooks from its own location (the parent of its
+# scripts/ directory), not from the cwd, so the fixture is a temp dir whose
+# scripts/ holds symlinks back to the real scripts — the installer's
+# existence checks pass while every write lands in the skeleton, and the
+# real repo's .git/hooks is never touched. Pass "bare" to skip git init for
+# the not-a-git-repository contract.
+new_fake_repo() {
+  FAKE_REPO="$(mktemp -d "${TMPDIR:-/tmp}/jcs-install-hooks.XXXXXX")"
+  if [[ "$FAKE_REPO" != "${TMPDIR:-/tmp}"/* ]]; then
+    echo -e "${RED}fixture repo escaped tmp: $FAKE_REPO${NC}" >&2
+    exit 1
+  fi
+  FAKE_REPOS+=("$FAKE_REPO")
+  if [[ "${1:-}" != "bare" ]]; then
+    git -C "$FAKE_REPO" init -q >/dev/null 2>&1 || {
+      echo -e "${RED}fixture git init failed in $FAKE_REPO${NC}" >&2
+      exit 1
+    }
+  fi
+  mkdir -p "$FAKE_REPO/scripts"
+  local script
+  for script in install-hooks.sh validate-skills.sh \
+    test-root-scripts.sh test-script-fixtures.sh; do
+    ln -s "$REPO_ROOT/scripts/$script" "$FAKE_REPO/scripts/$script"
+  done
 }
 
 # Run check-installed.sh against the fixture home. The script resolves repo
@@ -284,6 +322,73 @@ test_install_contracts() {
     test -f "$FAKE_SKILLS/$SIBLING_SKILL/$SIBLING_SENTINEL"
 }
 
+# --- install-hooks.sh pre-commit hook install --------------------------------
+
+# The three suite invocations the README's Testing section documents the
+# pre-commit hook to run, in order. Matched against the hook's non-comment
+# lines, so wording drift in the hook's own comments cannot fake a pass.
+DOCUMENTED_HOOK_SUITES='scripts/validate-skills.sh
+scripts/test-root-scripts.sh
+scripts/test-script-fixtures.sh'
+
+# Assert the hook's non-comment lines invoke exactly the documented three
+# suites — none missing, none duplicated, nothing extra.
+expect_hook_suites() {
+  local label="$1" hook="$2"
+  local found
+  found="$(grep -v '^[[:space:]]*#' "$hook" | grep -oE 'scripts/[a-z-]+\.sh' || true)"
+  if [[ "$found" == "$DOCUMENTED_HOOK_SUITES" ]]; then
+    log_pass "$label"
+  else
+    log_fail "$label — non-comment suite references:"
+    echo "$found" | sed 's/^/      /'
+  fi
+}
+
+test_install_hooks_contracts() {
+  echo ""
+  echo "=== install-hooks.sh pre-commit hook install ==="
+  new_fake_repo
+  local hook="$FAKE_REPO/.git/hooks/pre-commit"
+
+  # Fresh install: exit 0, an executable hook on disk invoking exactly the
+  # documented three suites. The hook is checked by content, never executed
+  # — it re-derives its repo root from its own path, so running it here
+  # would point the suites at the skeleton repo, not a skills checkout.
+  expect_exit 0 "fresh install exits 0" bash "$FAKE_REPO/scripts/install-hooks.sh"
+  expect_ok "fresh install wrote .git/hooks/pre-commit" test -f "$hook"
+  expect_ok "installed hook is executable" test -x "$hook"
+  expect_hook_suites "installed hook invokes exactly the documented three suites" "$hook"
+
+  # Re-run: exit 0, byte-identical hook — no duplicated suite lines, no clobber.
+  cp "$hook" "$FAKE_REPO/pre-commit.first"
+  expect_exit 0 "re-run exits 0 (idempotent)" bash "$FAKE_REPO/scripts/install-hooks.sh"
+  expect_ok "re-run left the hook byte-identical" \
+    cmp -s "$FAKE_REPO/pre-commit.first" "$hook"
+
+  # An older hook of ours — the two-suite shape from before the fixtures
+  # suite existed — is recognized as ours and upgraded in place to the
+  # documented three.
+  printf '#!/usr/bin/env bash\nbash "%s/scripts/validate-skills.sh" || exit 1\nbash "%s/scripts/test-root-scripts.sh" || exit 1\n' \
+    "$FAKE_REPO" "$FAKE_REPO" > "$hook"
+  expect_exit 0 "older two-suite hook: install exits 0" bash "$FAKE_REPO/scripts/install-hooks.sh"
+  expect_hook_suites "older two-suite hook upgraded to the documented three" "$hook"
+
+  # A foreign pre-existing hook is backed up byte-identically to
+  # pre-commit.backup, then replaced by the documented hook.
+  printf '#!/bin/sh\necho foreign hook ran\n' > "$FAKE_REPO/foreign-hook"
+  cp "$FAKE_REPO/foreign-hook" "$hook"
+  expect_exit 0 "install over a foreign hook exits 0" bash "$FAKE_REPO/scripts/install-hooks.sh"
+  expect_ok "foreign hook preserved byte-identically at pre-commit.backup" \
+    cmp -s "$FAKE_REPO/foreign-hook" "$FAKE_REPO/.git/hooks/pre-commit.backup"
+  expect_hook_suites "hook installed over a foreign one invokes the documented three" "$hook"
+
+  # Not a git repository (no .git/hooks): refused with exit 1.
+  new_fake_repo bare
+  expect_exit 1 "no .git/hooks → exit 1, nothing installed" \
+    bash "$FAKE_REPO/scripts/install-hooks.sh"
+}
+
 # --- usage-statusline out-of-tree install ------------------------------------
 
 test_statusline_contracts() {
@@ -381,6 +486,7 @@ main() {
 
   test_check_installed_contracts
   test_install_contracts
+  test_install_hooks_contracts
   test_statusline_contracts
 
   echo ""
