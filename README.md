@@ -104,12 +104,18 @@ Three suites run before each commit (via the pre-commit hook installed by `scrip
 | `scripts/test-root-scripts.sh` | Documented contracts of the root scripts: `check-installed.sh` exit codes, `install.sh` flag behavior and out-of-tree statusline install, `install-hooks.sh` pre-commit hook install |
 | `scripts/test-script-fixtures.sh` | The per-skill `SELF-TEST.md` script fixtures: each score/scan script's heredoc fixture replayed mechanically against its pinned counts, MISSING lists, and exit codes — any mismatch fails the commit or the push |
 
-The push path itself has an external heartbeat: run `scripts/check-push-ci.sh`
-to confirm the newest non-CI-authored `origin/main` push produced a
-sensor-submitted `skills-validate` workflow in `iad-ci`. It waits through a
-15-minute delivery grace window by default; use `--grace-minutes 0` when the
-push is already old enough to judge. A passing check covers the Forgejo route,
-JetStream delivery, sensor trigger, and Workflow submission together.
+The push path itself has an external heartbeat: `scripts/check-push-ci.sh`
+runs every 30 minutes in `iad-ci` (the `push-ci-heartbeat` Argo CronWorkflow
+in declarative-config, `k8s/iad-ci/argo-workflows/`), which clones this repo
+and confirms the newest non-CI-authored `origin/main` push produced a
+sensor-submitted `skills-validate` workflow in `iad-ci`. Only the script's
+exit 1 (path dead — pushes landing unvalidated) fails the run and turns it
+red; exit 2 (cannot judge) and exit 3 (inside the grace window) are recorded
+and stay green. The check is still runnable by hand the same way; it waits
+through a 15-minute delivery grace window by default — use `--grace-minutes 0`
+when the push is already old enough to judge. A passing check covers the
+Forgejo route, JetStream delivery, sensor trigger, and Workflow submission
+together.
 
 To run any of them by hand:
 

@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Push-CI heartbeat ratcheted onto a clock** (2026-09-17) —
+  `scripts/check-push-ci.sh` existed but had to be remembered; nothing ran it
+  on a schedule, which is how the 2026-08-29..09-16 wedge went unnoticed for
+  two weeks while the sensor's liveness probe kept passing. declarative-config
+  now ships the `push-ci-heartbeat` CronWorkflow
+  (`k8s/iad-ci/argo-workflows/push-ci-heartbeat-cronworkflow.yml`): every 30
+  minutes it clones this repo in iad-ci and runs the check, failing the run
+  only on the script's exit 1 (path dead — pushes landing unvalidated); exit
+  2 (cannot judge) and exit 3 (inside the grace window) are recorded and stay
+  green, per the script's alert-on-1-and-no-other contract. Failed runs are
+  retained 24h so the alarm outlives the working day. The same
+  declarative-config change raises the `skills-validate` template's TTL past
+  the cluster's 30-minute success reaper (`workflowDefaults` in the argo
+  controller configmap): the workflow proving a push (skills-validate-zj9jg,
+  commit b721837) was reaped ~30 min after it finished, so the heartbeat's
+  first runs on 2026-09-17 (04:12Z..08:11Z, all red) correctly read "zero
+  sensor workflows on record" and raised a false path-is-dead alarm while the
+  path was healthy. Workflows submitted after the TTL fix are kept 7 days,
+  and the first push landing after it re-arms the heartbeat.
 - **Fixture-coverage ratchet** (2026-09-16) — `scripts/test-script-fixtures.sh`
   no longer lets a new `score-*`/`scan-*`-class script ship unpinned. Replaying
   fixtures only failed when a pin existed and drifted; a brand-new script with
