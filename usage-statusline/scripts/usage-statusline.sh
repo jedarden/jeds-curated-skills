@@ -172,12 +172,85 @@ git_commits=0
 [[ -f "$GIT_CACHE" ]] && git_commits=$(cat "$GIT_CACHE" 2>/dev/null || echo 0)
 git_commits=$(( git_commits + 0 ))
 
+# ---------------------------------------------------------------------------
+# Host load and memory.
+#
+# Read straight out of /proc instead of shelling out to top/free/vmstat: this
+# renders on every prompt, so it has to stay cheap. Everything below is pure
+# bash string work plus one `nproc`.
+#
+# Assignment form `x=$(( ... ))` is used throughout rather than bare
+# `(( ... ))`, deliberately: this script runs under `set -euo pipefail`, and a
+# bare arithmetic command whose value is zero returns exit status 1, which
+# would kill the whole statusline the moment load rounded down to 0%.
+#
+# host_ok gates rendering, so an unreadable /proc (a container, a kernel
+# change) drops these two segments instead of blanking the line.
+# ---------------------------------------------------------------------------
+host_ok=1
+
+cpu_cores=$(nproc 2>/dev/null || echo 0)
+cpu_cores=$(( cpu_cores + 0 ))
+(( cpu_cores > 0 )) || cpu_cores=1
+
+load_disp="?"
+cpu_pct=0
+if [[ -r /proc/loadavg ]]; then
+    read -r load1 _ < /proc/loadavg || load1="0.00"
+    load_int=${load1%%.*}
+    load_frac=${load1#*.}00
+    # centi-load = load x 100, so the percentage divides without floats.
+    load_centi=$(( 10#${load_int:-0} * 100 + 10#${load_frac:0:2} ))
+    cpu_pct=$(( load_centi / cpu_cores ))
+    load_disp="${load_int:-0}.${load_frac:0:1}"
+else
+    host_ok=0
+fi
+
+mem_disp="?"
+mem_pct=0
+if [[ -r /proc/meminfo ]]; then
+    mem_total_kb=0
+    mem_avail_kb=0
+    while read -r mk mv _; do
+        case "$mk" in
+            MemTotal:)     mem_total_kb=$mv ;;
+            MemAvailable:) mem_avail_kb=$mv ;;
+        esac
+    done < /proc/meminfo
+    if (( mem_total_kb > 0 )); then
+        # MemAvailable, not MemFree: free excludes reclaimable page cache and
+        # would report this box as ~95% used while 20G+ is actually available.
+        mem_used_kb=$(( mem_total_kb - mem_avail_kb ))
+        mem_pct=$(( mem_used_kb * 100 / mem_total_kb ))
+        mem_disp="$(( mem_used_kb / 1048576 ))/$(( mem_total_kb / 1048576 ))G"
+    else
+        host_ok=0
+    fi
+else
+    host_ok=0
+fi
+
+# used/total with its own percentage, coloured on the same 50/80 thresholds as
+# the quota windows so one glance reads the whole line the same way.
+hostseg() {
+    color "$3"
+    printf '%s %s %d%%' "$1" "$2" "$3"
+    printf '%b' "$R"
+}
+
 win "5h" "$p5h" "$e5h" "$t5h"
 printf '%b' " ${D}│${R} "
 win "7d" "$p7d" "$e7d" "$t7d"
 if (( p7f >= 0 )); then
     printf '%b' " ${D}│${R} "
     win "$lbl7f" "$p7f" "$e7f" "$t7f"
+fi
+if (( host_ok )); then
+    printf '%b' " ${D}│${R} "
+    hostseg "cpu" "${load_disp}/${cpu_cores}" "$cpu_pct"
+    printf '%b' " ${D}│${R} "
+    hostseg "ram" "$mem_disp" "$mem_pct"
 fi
 printf '%b' " ${D}│${R} "
 printf '\033[36m⎇ %d\033[0m' "$git_commits"
