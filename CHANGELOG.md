@@ -93,6 +93,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the diff alone sees nothing). Pinned in `scripts/test-root-scripts.sh`.
 
 ### Fixed
+- **usage-statusline survives API format drift** (2026-09-23,
+  `jedscura-db44b85b`) — the statusline went completely blank when the usage
+  API began returning a third limit (a model-scoped weekly cap) whose
+  `resets_at` was `2026-09-30T01:00:00+00:00`, with no fractional seconds. The
+  jq timestamp helper only stripped `.<digits>+00:00`, so `fromdateiso8601`
+  rejected it and jq aborted mid-output; `eval "$(jq … 2>/dev/null)"` hid the
+  error, the scoped-limit variables were never set, and `set -u` killed the
+  script (`p7f: unbound variable`, exit 1) — the harness draws nothing for a
+  non-zero exit. The script is now built to degrade instead of fail as a unit:
+  no `set -e`/`-u`, every value validated as an integer before arithmetic, each
+  segment rendered in its own subshell, always exit 0, the API JSON never
+  `eval`'d (the old `eval` executed a `$(…)` inside a `display_name`), and
+  `resets_at` accepted as ISO-8601 with any fraction and UTC offset or as epoch
+  seconds/ms, with the legacy `five_hour`/`seven_day` fields as a fallback.
+  Missing or unreadable quota data now renders `usage n/a` while cpu/ram/`⎇`
+  still show, and a cache more than 15 minutes old is marked `stale <age>`.
+  Fetching moved off the render path (detached, one attempt per 60 s), the
+  cache is written atomically after a shape check, and failures are logged to
+  `~/.cache/claude-usage/statusline.log`. Credential handling, found broken by
+  the new regression suite: the old refresh rewrote `.credentials.json` at
+  mode 644 (world-readable), would write null tokens over it if the endpoint
+  returned a 200 with an unexpected body, and put both tokens on `curl`'s argv
+  (visible in `ps`) — refresh responses are now validated, the file is replaced
+  only if unchanged since read, `umask` is 077, and tokens travel on stdin.
+  `SELF-TEST.md` cases 1–3 previously pinned the blank/non-zero behavior as a
+  "known quirk" and were deliberately re-pinned; a new "Format-drift and
+  failure isolation" block (77 checks, all passing;
+  the previous script fails 58 of them) covers the incident and the drift cases.
 - **CI fixtures step runs GNU userland** (2026-09-16) — the `skills-validate`
   WorkflowTemplate's `script-fixtures` step moved from `alpine/git` to
   `debian:bookworm-slim`: busybox broke 5 of the suite's 160 pins on its

@@ -16,12 +16,8 @@
 ./scripts/test-root-scripts.sh|SC2329=1
 ./test-plan-review/scripts/scan-tests.sh|SC2086=2
 ./test-plan-review/scripts/scan-tests.sh|SC2295=2
-./usage-statusline/scripts/usage-statusline.sh|SC2154=10
 
 # --- justifications (hand-maintained; everything above is refreshed) ---
-# ./usage-statusline/scripts/usage-statusline.sh|SC2154: p5h/p7d/p7f and
-#   siblings are assigned by `eval "$(jq -r ...)"` and are not statically
-#   visible to shellcheck. Not fixable without dropping the jq eval pattern.
 # ./release-readiness/scripts/scan-release.sh|SC2221+SC2222: `*test*` already
 #   covers `*/testdata/*`; both arms `continue`, so behavior is correct — the
 #   pattern list is redundant, not wrong.
