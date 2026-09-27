@@ -550,8 +550,10 @@ if [[ "\$backend_kind" == "bf" ]]; then
   # the compatibility deduplication check; keep the query's output private as
   # well because backend renderers may include the full description.
   existing_beads=""
-  if existing_beads="\$(cd "\$HOME_WORKSPACE" && "\$bead_cli" list --status open 2>/dev/null)" \\
-      && grep -qF -- "\$title" <<<"\$existing_beads"; then
+  if ! existing_beads="\$(cd "\$HOME_WORKSPACE" && "\$bead_cli" list --status open 2>/dev/null)"; then
+    echo "memory-tool check failed; unable to file bead: existing bead lookup failed in \$HOME_WORKSPACE." >&2
+    create_rc=1
+  elif grep -qF -- "\$title" <<<"\$existing_beads"; then
     echo "An open memory-tool check failure bead already exists; nothing new to file."
   elif (cd "\$HOME_WORKSPACE" && "\$bead_cli" create \\
       --title "\$title" \\

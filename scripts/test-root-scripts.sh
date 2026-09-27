@@ -375,6 +375,7 @@ REVIEW_TIMER_BEAD_LOG=""
 REVIEW_TIMER_BF_LOG=""
 REVIEW_TIMER_BEAD_ISSUE=""
 REVIEW_TIMER_BF_ISSUE=""
+REVIEW_TIMER_BF_LIST_RC=0
 REVIEW_TIMER_MEMORY_CWD_LOG=""
 REVIEW_TIMER_CLAUDE_LOG=""
 REVIEW_TIMER_CLAUDE_CWD_LOG=""
@@ -500,6 +501,9 @@ printf ' %q' "$@" >>"$REVIEW_TIMER_BF_LOG"
 printf ' cwd=%q' "${PWD:?}" >>"$REVIEW_TIMER_BF_LOG"
 printf '\n' >>"$REVIEW_TIMER_BF_LOG"
 if [[ "${1:-}" == list ]]; then
+  if [[ "${REVIEW_TIMER_BF_LIST_RC:-0}" -ne 0 ]]; then
+    exit "${REVIEW_TIMER_BF_LIST_RC}"
+  fi
   if [[ -e "${REVIEW_TIMER_BF_ISSUE:?}" ]]; then
     printf '%s\n' 'memory-tool check failure'
     for skill in plan-vs-built find-stubs repo-hygiene; do
@@ -558,6 +562,7 @@ run_review_timer_runner() {
     REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BF_LOG" \
     REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BEAD_ISSUE" \
     REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BF_ISSUE" \
+    REVIEW_TIMER_BF_LIST_RC="$REVIEW_TIMER_BF_LIST_RC" \
     REVIEW_TIMER_MEMORY_CWD_LOG="$REVIEW_TIMER_MEMORY_CWD_LOG" \
     "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
 }
@@ -907,6 +912,21 @@ test_review_timer_contracts() {
     test "$(<"$REVIEW_TIMER_BF_ISSUE")" = 1
   expect_ok "legacy rerun does not create a second bead" \
     test "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG" || true)" = 1
+
+  # A legacy open-bead lookup failure must not fall through to create: without
+  # a successful deduplication check, filing could create an unbounded stream
+  # of duplicate failure beads on every timer run.
+  REVIEW_TIMER_BF_LIST_RC=17
+  rm -f "$REVIEW_TIMER_BF_LOG" "$REVIEW_TIMER_BF_ISSUE"
+  capture_review_timer_runner "$REVIEW_TIMER_LEGACY_WORKSPACE"
+  assert_review_timer_rc 23 "legacy lookup failure preserves check failure code"
+  assert_review_timer_output_has "legacy lookup failure reports unable to file" \
+    'existing bead lookup failed'
+  expect_ok "legacy lookup failure creates no bead" \
+    test ! -e "$REVIEW_TIMER_BF_ISSUE"
+  expect_ok "legacy lookup failure never calls create" \
+    test "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG" || true)" = 0
+  REVIEW_TIMER_BF_LIST_RC=0
 
   # Dry-run uninstall must preview the manager commands and removals without
   # changing any of the currently installed artifacts.
