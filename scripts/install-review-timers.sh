@@ -739,6 +739,14 @@ installer_owns_file() {
   )
 }
 
+# A checkout may be used from a shell without systemd installed at all. Keep
+# that case distinct from a present systemctl whose user manager is unavailable
+# so installation remains successful after writing the generated artifacts and
+# the user gets one actionable warning instead of a shell-level command error.
+user_systemctl_available() {
+  command -v systemctl >/dev/null 2>&1
+}
+
 # Refuse to overwrite a same-named file that this installer did not create.
 # This keeps an unrelated user unit/configuration recoverable and makes the
 # ownership rule true even when an operator later runs --uninstall.
@@ -837,7 +845,7 @@ uninstall_unit() {
     if [[ "$DRY_RUN" == "true" ]]; then
       echo -e "${YELLOW}[DRY RUN]${NC} systemctl --user stop ${unit_name}.timer"
       echo -e "${YELLOW}[DRY RUN]${NC} systemctl --user disable ${unit_name}.timer"
-    elif command -v systemctl >/dev/null 2>&1; then
+    elif user_systemctl_available; then
       systemctl --user is-active "${unit_name}.timer" >/dev/null 2>&1 && \
         systemctl --user stop "${unit_name}.timer" >/dev/null 2>&1 || true
       systemctl --user is-enabled "${unit_name}.timer" >/dev/null 2>&1 && \
@@ -903,7 +911,9 @@ install_all() {
     echo -e "${YELLOW}[DRY RUN]${NC} systemctl --user daemon-reload"
     echo -e "${YELLOW}[DRY RUN]${NC} systemctl --user enable --now ${timer_units[*]}"
   else
-    if ! systemctl --user daemon-reload; then
+    if ! user_systemctl_available; then
+      echo -e "${YELLOW}Warning: systemctl is unavailable; unit files were installed but not activated.${NC}" >&2
+    elif ! systemctl --user daemon-reload; then
       echo -e "${YELLOW}Warning: systemd user manager unavailable; unit files were installed but not activated.${NC}" >&2
     elif ! systemctl --user enable --now "${timer_units[@]}"; then
       echo -e "${YELLOW}Warning: timers were installed but could not be enabled; run systemctl --user enable --now ${timer_units[*]} when the user manager is available.${NC}" >&2
@@ -954,10 +964,14 @@ uninstall_all() {
   # disturb an unrelated user manager, and dry-run prints the command only.
   if [[ "$UNINSTALL_FOUND" == "true" && "$DRY_RUN" == "true" ]]; then
     echo -e "${YELLOW}[DRY RUN]${NC} systemctl --user daemon-reload"
-  elif [[ "$UNINSTALL_FOUND" == "true" ]] && command -v systemctl >/dev/null 2>&1; then
-    echo -e "${BLUE}Reloading systemd...${NC}"
-    if ! systemctl --user daemon-reload; then
-      echo -e "${YELLOW}Warning: could not reload the systemd user manager; removed files are still gone.${NC}" >&2
+  elif [[ "$UNINSTALL_FOUND" == "true" ]]; then
+    if ! user_systemctl_available; then
+      echo -e "${YELLOW}Warning: systemctl is unavailable; removed files are gone but the user manager was not reloaded.${NC}" >&2
+    else
+      echo -e "${BLUE}Reloading systemd...${NC}"
+      if ! systemctl --user daemon-reload; then
+        echo -e "${YELLOW}Warning: could not reload the systemd user manager; removed files are still gone.${NC}" >&2
+      fi
     fi
   fi
 
