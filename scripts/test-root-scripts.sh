@@ -699,6 +699,22 @@ test_review_timer_contracts() {
     cp "$unit_runner" "$snapshot_dir/$unit.sh"
   done
 
+  # Parse the actual generated files with systemd's verifier when the host
+  # provides it. The structural assertions above catch contract drift, while
+  # this catches syntax or calendar errors that a shell fixture cannot see.
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    local generated_units=("$unit_dir"/*.service "$unit_dir"/*.timer)
+    local systemd_verify_log="$REVIEW_TIMER_BASE/systemd-analyze.log"
+    if systemd-analyze verify "${generated_units[@]}" >"$systemd_verify_log" 2>&1; then
+      log_pass "generated factory-review units pass systemd-analyze verify"
+    else
+      log_fail "generated factory-review units fail systemd-analyze verify"
+      sed 's/^/      /' "$systemd_verify_log" >&2
+    fi
+  else
+    echo "SKIP: systemd-analyze is unavailable; generated-unit verification was not checked"
+  fi
+
   expect_ok "install requests a user-manager reload" grep -qF \
     -- '--user daemon-reload' "$REVIEW_TIMER_SYSTEMCTL_LOG"
   expect_ok "install enables every generated timer" grep -qF \

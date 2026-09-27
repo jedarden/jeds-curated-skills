@@ -523,7 +523,8 @@ probe when the host's user manager is available. A host without systemd or a use
 `SKIP` and remains green. The fixture checks every generated service,
 timer, and runner (the four workspace review timers plus the installed-drift timer), including
 oneshot/timeout/Nice/PATH/journal properties, staggered calendars, persistent activation, and
-manual service execution. It also checks that repeated install is byte-identical, `--dry-run`
+manual service execution. When `systemd-analyze` is available, it also verifies every generated
+service and timer file; otherwise it records an explicit `SKIP`. It also checks that repeated install is byte-identical, `--dry-run`
 prints the generated commands without filesystem side effects, all three reviews visit two
 configured workspaces, clean reports produce no bead and an explicit `nothing to file` result,
 findings carry captured output into beads through both backends, failed Claude commands preserve
