@@ -685,7 +685,16 @@ test_review_timer_contracts() {
     'Thu 02:00'
     'Fri 02:00'
   )
+  local workspace_units=(
+    factory-review-plan-vs-built
+    factory-review-find-stubs
+    factory-review-repo-hygiene
+  )
+  local workspace_skills=(plan-vs-built find-stubs repo-hygiene)
   local unit service timer unit_runner snapshot_dir i
+
+  expect_ok "review-timer installer passes bash syntax" \
+    bash -n "$REVIEW_TIMER_INSTALL"
 
   # Every installer-owned unit has the same service guarantees. Check all
   # five generated pairs, including the machine-local drift timer, rather
@@ -717,9 +726,32 @@ test_review_timer_contracts() {
     expect_ok "$unit timer is persistent" grep -qF 'Persistent=true' "$timer"
     expect_ok "$unit timer is installable" grep -qF 'WantedBy=timers.target' "$timer"
     expect_ok "$unit runner is executable" test -x "$unit_runner"
+    expect_ok "$unit runner passes bash syntax" bash -n "$unit_runner"
     cp "$service" "$snapshot_dir/$unit.service"
     cp "$timer" "$snapshot_dir/$unit.timer"
     cp "$unit_runner" "$snapshot_dir/$unit.sh"
+  done
+
+  # The three workspace-list timers share the same generated runner contract:
+  # each service must reach claude --print, and each timer must occupy a
+  # distinct weekday slot. Keep these assertions separate from the five-unit
+  # lifecycle loop above so the workspace review surface cannot be masked by
+  # the memory or installed-drift timers.
+  for i in "${!workspace_units[@]}"; do
+    unit="${workspace_units[$i]}"
+    service="$unit_dir/$unit.service"
+    unit_runner="$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
+    expect_ok "$unit service launches its generated runner" grep -qF \
+      "$unit.sh" "$service"
+    expect_ok "$unit runner names its workspace skill" grep -qF \
+      "SKILL_NAME=\"${workspace_skills[$i]}\"" "$unit_runner"
+    expect_ok "$unit runner invokes claude --print" grep -qF \
+      'claude --append-system-prompt "$REVIEW_PROTOCOL" --print /${SKILL_NAME} .' \
+      "$unit_runner"
+    if command -v systemd-analyze >/dev/null 2>&1; then
+      expect_ok "$unit timer has a valid weekly calendar" \
+        systemd-analyze calendar "${schedules[$i]}"
+    fi
   done
 
   # Parse the actual generated files with systemd's verifier when the host
@@ -775,18 +807,42 @@ test_review_timer_contracts() {
 
   local dry_home="$REVIEW_TIMER_BASE/dry-home"
   mkdir -p "$dry_home"
+  local dry_systemctl_log="$REVIEW_TIMER_BASE/systemctl.before-dry-run"
+  local dry_systemctl_state="$REVIEW_TIMER_BASE/systemctl-state.before-dry-run"
+  cp "$REVIEW_TIMER_SYSTEMCTL_LOG" "$dry_systemctl_log"
+  cp "$REVIEW_TIMER_SYSTEMCTL_STATE" "$dry_systemctl_state"
   capture_review_timer_dry_run "$dry_home"
   assert_review_timer_dry_rc 0 "review-timer dry-run exits 0"
-  expect_ok "review-timer dry-run prints generated units" grep -qF \
-    'factory-review-plan-vs-built.service' <<<"$REVIEW_TIMER_DRY_OUTPUT"
-  expect_ok "review-timer dry-run prints the final timer" grep -qF \
-    'factory-review-installed-drift.timer' <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  for i in "${!workspace_units[@]}"; do
+    unit="${workspace_units[$i]}"
+    expect_ok "dry-run prints $unit service" grep -qF \
+      "$unit.service" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints $unit timer" grep -qF \
+      "$unit.timer" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints $unit skill command" grep -qF \
+      "SKILL_NAME=\"${workspace_skills[$i]}\"" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints the claude --print template" grep -qF \
+      'claude --append-system-prompt "$REVIEW_PROTOCOL" --print /${SKILL_NAME} .' \
+      <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints $unit weekly schedule" grep -qF \
+      "OnCalendar=${schedules[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  done
+  expect_ok "dry-run prints generated service settings" grep -qF \
+    'Type=oneshot' <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  expect_ok "dry-run prints the generous timeout" grep -qF \
+    'TimeoutSec=30min' <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  expect_ok "dry-run prints the system PATH" grep -qF \
+    'Environment=PATH=/run/current-system/sw/bin:' <<<"$REVIEW_TIMER_DRY_OUTPUT"
   expect_ok "review-timer dry-run prints daemon-reload" grep -qF \
     'systemctl --user daemon-reload' <<<"$REVIEW_TIMER_DRY_OUTPUT"
   expect_ok "review-timer dry-run prints timer activation" grep -qF \
     'systemctl --user enable --now' <<<"$REVIEW_TIMER_DRY_OUTPUT"
   expect_ok "review-timer dry-run has no filesystem side effects" \
     test ! -e "$dry_home/.config"
+  expect_ok "review-timer dry-run does not mutate systemctl log" \
+    cmp -s "$dry_systemctl_log" "$REVIEW_TIMER_SYSTEMCTL_LOG"
+  expect_ok "review-timer dry-run does not mutate systemctl state" \
+    cmp -s "$dry_systemctl_state" "$REVIEW_TIMER_SYSTEMCTL_STATE"
 
   local no_systemctl_output no_systemctl_rc=0
   no_systemctl_output="$(run_review_timer_install_without_systemctl 2>&1)" || \
@@ -831,6 +887,8 @@ test_review_timer_contracts() {
     '--print /plan-vs-built .' "$REVIEW_TIMER_CLAUDE_LOG"
   expect_ok "repo-hygiene review invokes claude with its skill" grep -qF -- \
     '--print /repo-hygiene .' "$REVIEW_TIMER_CLAUDE_LOG"
+  expect_ok "find-stubs review invokes claude with its skill" grep -qF -- \
+    '--print /find-stubs .' "$REVIEW_TIMER_CLAUDE_LOG"
 
   # A findings result is captured and filed through each target workspace's
   # declared backend. The report is carried in the create call and the stable
