@@ -351,15 +351,16 @@ cd ~/jeds-curated-skills
 ```
 
 The installer manages four weekly workspace checks plus one machine-local drift check, all
-staggered across the week:
+staggered across the week. Each row installs the named `.timer`, its paired `.service`, and a
+runner script under `~/.config/factory-review/`:
 
-| Timer | Schedule | Skill |
-|-------|----------|-------|
-| `factory-review-plan-vs-built.timer` | Mon 02:00 | plan-vs-built |
-| `factory-review-find-stubs.timer` | Tue 02:00 | find-stubs |
-| `factory-review-repo-hygiene.timer` | Wed 02:00 | repo-hygiene |
-| `factory-review-memory-tool.timer` | Thu 02:00 | memory-tool check |
-| `factory-review-installed-drift.timer` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
+| Timer | Service | Schedule | Action |
+|-------|---------|----------|--------|
+| `factory-review-plan-vs-built.timer` | `factory-review-plan-vs-built.service` | Mon 02:00 | `plan-vs-built` |
+| `factory-review-find-stubs.timer` | `factory-review-find-stubs.service` | Tue 02:00 | `find-stubs` |
+| `factory-review-repo-hygiene.timer` | `factory-review-repo-hygiene.service` | Wed 02:00 | `repo-hygiene` |
+| `factory-review-memory-tool.timer` | `factory-review-memory-tool.service` | Thu 02:00 | `memory-tool check` |
+| `factory-review-installed-drift.timer` | `factory-review-installed-drift.service` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
 
 ### What gets installed
 
@@ -388,11 +389,25 @@ is not available, the generated files remain installed and the script prints the
 activate them later.
 
 The installer creates `~/.config/factory-review/workspaces.txt` with comments if it does not
-exist. Put one workspace path on each line. Blank lines and comments are ignored; `~` expands
-to `$HOME`, and other relative paths are also resolved relative to `$HOME`. Missing directories
-are skipped. The first three workspace timers invoke `claude --print` for their skill; the
-`repo-hygiene` invocation additionally passes `--file-beads`. A failure in one workspace is
-reported, but the remaining configured workspaces are still processed.
+exist. Put one workspace path on each line; for example:
+
+```text
+# Absolute paths are accepted.
+/home/coding/project-a
+
+# ~ and paths without a leading slash are relative to $HOME.
+~/project-b
+projects/project-c
+```
+
+Blank lines and lines whose first non-whitespace character is `#` are ignored. `~` expands to
+`$HOME`, and other relative paths are also resolved relative to `$HOME`. Missing directories are
+skipped. The first three workspace timers invoke `claude --print` for their skill; the
+`repo-hygiene` invocation additionally passes `--file-beads`. Each review runs from the target
+workspace and uses that workspace's declared bead backend for findings (`bead` for `bead-rs`,
+`bf` for legacy `bf`/bead-forge); the review runners do not write `.beads/` directly. A failure
+in one workspace is reported and makes that service fail, but the remaining configured
+workspaces are still processed.
 
 The `memory-tool` timer is different: it is a host check, runs exactly once, and ignores
 `workspaces.txt`. It chooses its filing workspace from `FACTORY_REVIEW_HOME_WORKSPACE` when
@@ -469,6 +484,10 @@ systemd state:
 ```bash
 ./scripts/install-review-timers.sh --dry-run
 ```
+
+The installer accepts no option for a normal install, `--dry-run` to preview, `--uninstall` to
+remove its generated units, and `--help` (or `-h`) to print usage. An unknown option exits with
+an error and the usage text.
 
 Remove only the timers, services, and runner scripts owned by this installer with:
 
