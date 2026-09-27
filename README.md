@@ -402,12 +402,15 @@ projects/project-c
 
 Blank lines and lines whose first non-whitespace character is `#` are ignored. `~` expands to
 `$HOME`, and other relative paths are also resolved relative to `$HOME`. Missing directories are
-skipped. The first three workspace timers invoke `claude --print` for their skill; the
-`repo-hygiene` invocation additionally passes `--file-beads`. Each review runs from the target
-workspace and uses that workspace's declared bead backend for findings (`bead` for `bead-rs`,
-`bf` for legacy `bf`/bead-forge); the review runners do not write `.beads/` directly. A failure
-in one workspace is reported and makes that service fail, but the remaining configured
-workspaces are still processed.
+skipped. Each workspace timer invokes `claude --print` with its skill in report-only mode, captures
+the combined output, and prints it to the service journal. Claude is asked to finish with
+`FACTORY_REVIEW_RESULT: clean` or `FACTORY_REVIEW_RESULT: findings`; a clean result prints an
+explicit `nothing to file` outcome, while findings are filed as one report bead in the target
+workspace. Filing uses the workspace's declared backend (`bead` for `bead-rs`, `bf` for legacy
+`bf`/bead-forge), stable report hashing for bead-rs deduplication, and open-title lookup for
+legacy bf. The review runners never write `.beads/` directly. A Claude or filing failure is
+reported and makes that service fail, but the remaining configured workspaces are still
+processed.
 
 The `memory-tool` timer is different: it is a host check, runs exactly once, and ignores
 `workspaces.txt`. It chooses its filing workspace from `FACTORY_REVIEW_HOME_WORKSPACE` when
@@ -508,10 +511,12 @@ real user manager, workspace list, or bead store. The fixture checks every gener
 timer, and runner (the four workspace review timers plus the installed-drift timer), including
 oneshot/timeout/Nice/PATH/journal properties, staggered calendars, persistent activation, and
 manual service execution. It also checks that repeated install is byte-identical, `--dry-run`
-prints the generated commands without filesystem side effects, a successful review is observable,
-an empty workspace list reports `No configured workspaces; nothing to file.`, a passing memory
-check files no bead, and failing bead-rs/legacy checks preserve their exit code while filing one
-deduplicated bead without exposing diagnostics. Finally, `--uninstall` removes every
+prints the generated commands without filesystem side effects, all three reviews visit two
+configured workspaces, clean reports produce no bead and an explicit `nothing to file` result,
+findings carry captured output into beads through both backends, failed Claude commands preserve
+their nonzero status, an empty workspace list reports `No configured workspaces; nothing to file.`,
+a passing memory check files no bead, and failing bead-rs/legacy checks preserve their exit code
+while filing one deduplicated bead without exposing diagnostics. Finally, `--uninstall` removes every
 installer-owned artifact while preserving the workspace list and foreign files. Keep these
 expectations in sync with this operator documentation when the timer contract changes.
 

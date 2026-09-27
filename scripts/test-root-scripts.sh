@@ -359,9 +359,10 @@ expect_ok() {
 
 # These fixtures exercise the generated review and memory-tool runners without
 # touching the real user manager, home directory, or bead store. The fake
-# claude command records review execution, while the fake bead CLIs model the
-# two backends' relevant contracts: bead-rs deduplicates through --unique-ref,
-# while legacy bf deduplicates by listing its open beads first.
+# claude command records every workspace execution and can emit clean,
+# findings, or failure results. The fake bead CLIs model the two backends'
+# relevant contracts: bead-rs deduplicates through --unique-ref, while legacy
+# bf deduplicates by listing its open beads first.
 REVIEW_TIMER_BASE=""
 REVIEW_TIMER_HOME=""
 REVIEW_TIMER_WORKSPACE=""
@@ -377,6 +378,7 @@ REVIEW_TIMER_MEMORY_CWD_LOG=""
 REVIEW_TIMER_CLAUDE_LOG=""
 REVIEW_TIMER_CLAUDE_CWD_LOG=""
 REVIEW_TIMER_MODE="pass"
+REVIEW_TIMER_CLAUDE_MODE="clean"
 REVIEW_TIMER_OUTPUT=""
 REVIEW_TIMER_RC=0
 REVIEW_TIMER_DRY_OUTPUT=""
@@ -438,7 +440,18 @@ printf '%s\n' "${PWD:?}" >>"${REVIEW_TIMER_CLAUDE_CWD_LOG:?}"
 printf 'claude' >>"${REVIEW_TIMER_CLAUDE_LOG:?}"
 printf ' %q' "$@" >>"$REVIEW_TIMER_CLAUDE_LOG"
 printf '\n' >>"$REVIEW_TIMER_CLAUDE_LOG"
-printf '%s\n' 'review fixture: success'
+case "${REVIEW_TIMER_CLAUDE_MODE:-clean}" in
+  findings)
+    printf '%s\n' 'review fixture: finding' 'FACTORY_REVIEW_RESULT: findings'
+    ;;
+  fail)
+    printf '%s\n' 'review fixture: command failure' 'FACTORY_REVIEW_RESULT: findings'
+    exit "${REVIEW_TIMER_CLAUDE_FAILURE_RC:-23}"
+    ;;
+  *)
+    printf '%s\n' 'review fixture: success' 'FACTORY_REVIEW_RESULT: clean'
+    ;;
+esac
 EOF
   chmod +x "$REVIEW_TIMER_HOME/.local/bin/claude"
 
@@ -447,6 +460,7 @@ EOF
 set -u
 printf 'bead' >>"${REVIEW_TIMER_BEAD_LOG:?}"
 printf ' %q' "$@" >>"$REVIEW_TIMER_BEAD_LOG"
+printf ' cwd=%q' "${PWD:?}" >>"$REVIEW_TIMER_BEAD_LOG"
 printf '\n' >>"$REVIEW_TIMER_BEAD_LOG"
 if [[ "${1:-}" != create ]]; then
   exit 2
@@ -465,10 +479,15 @@ EOF
 set -u
 printf 'bf' >>"${REVIEW_TIMER_BF_LOG:?}"
 printf ' %q' "$@" >>"$REVIEW_TIMER_BF_LOG"
+printf ' cwd=%q' "${PWD:?}" >>"$REVIEW_TIMER_BF_LOG"
 printf '\n' >>"$REVIEW_TIMER_BF_LOG"
 if [[ "${1:-}" == list ]]; then
   if [[ -e "${REVIEW_TIMER_BF_ISSUE:?}" ]]; then
     printf '%s\n' 'memory-tool check failure'
+    for skill in plan-vs-built find-stubs repo-hygiene; do
+      printf 'Factory review: %s findings in %s\n' "$skill" \
+        "${REVIEW_TIMER_LEGACY_WORKSPACE:?}"
+    done
   fi
   exit 0
 fi
@@ -506,6 +525,8 @@ run_review_timer_runner() {
     REVIEW_TIMER_MODE="$REVIEW_TIMER_MODE" \
     REVIEW_TIMER_FAILURE_RC=23 \
     REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    REVIEW_TIMER_WORKSPACE="$REVIEW_TIMER_WORKSPACE" \
+    REVIEW_TIMER_LEGACY_WORKSPACE="$REVIEW_TIMER_LEGACY_WORKSPACE" \
     REVIEW_TIMER_BEAD_LOG="$REVIEW_TIMER_BEAD_LOG" \
     REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BF_LOG" \
     REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BEAD_ISSUE" \
@@ -519,6 +540,14 @@ run_review_timer_review_runner() {
   env HOME="$REVIEW_TIMER_HOME" PATH="$REVIEW_TIMER_PATH" \
     REVIEW_TIMER_CLAUDE_LOG="$REVIEW_TIMER_CLAUDE_LOG" \
     REVIEW_TIMER_CLAUDE_CWD_LOG="$REVIEW_TIMER_CLAUDE_CWD_LOG" \
+    REVIEW_TIMER_CLAUDE_MODE="$REVIEW_TIMER_CLAUDE_MODE" \
+    REVIEW_TIMER_CLAUDE_FAILURE_RC=23 \
+    REVIEW_TIMER_WORKSPACE="$REVIEW_TIMER_WORKSPACE" \
+    REVIEW_TIMER_LEGACY_WORKSPACE="$REVIEW_TIMER_LEGACY_WORKSPACE" \
+    REVIEW_TIMER_BEAD_LOG="$REVIEW_TIMER_BEAD_LOG" \
+    REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BF_LOG" \
+    REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BEAD_ISSUE" \
+    REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BF_ISSUE" \
     "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-${unit_name}.sh"
 }
 
@@ -676,23 +705,78 @@ test_review_timer_contracts() {
     test ! -e "$dry_home/.config"
 
   # Manually execute each workspace review service in a configured fixture.
-  # The fake claude records its cwd and arguments, then emits a successful
-  # review result; no real agent or workspace is contacted.
+  # The fake claude records its cwd and arguments, then emits an explicit
+  # clean result. The two configured workspaces exercise both backend paths;
+  # no real agent or workspace is contacted.
   local workspace_config="$REVIEW_TIMER_HOME/.config/factory-review/workspaces.txt"
-  printf '%s\n' "$REVIEW_TIMER_WORKSPACE" >"$workspace_config"
+  printf '%s\n%s\n' "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_LEGACY_WORKSPACE" \
+    >"$workspace_config"
   local review_unit
+  REVIEW_TIMER_CLAUDE_MODE=clean
+  rm -f "$REVIEW_TIMER_BEAD_LOG" "$REVIEW_TIMER_BF_LOG" \
+    "$REVIEW_TIMER_BEAD_ISSUE" "$REVIEW_TIMER_BF_ISSUE"
   for review_unit in plan-vs-built find-stubs repo-hygiene; do
     capture_review_timer_review_runner "$review_unit"
     assert_review_timer_rc 0 "manual $review_unit service succeeds"
-    assert_review_timer_output_has "manual $review_unit service reports success" \
-      'review fixture: success'
+    assert_review_timer_output_has "manual $review_unit clean run is explicit" \
+      "$review_unit clean in $REVIEW_TIMER_WORKSPACE; nothing to file."
   done
-  expect_ok "review service executes in the fixture workspace" \
-    grep -qFx -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_CLAUDE_CWD_LOG"
+  expect_ok "clean review visits the first workspace for every skill" test \
+    "$(grep -cFx -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_CLAUDE_CWD_LOG")" = 3
+  expect_ok "clean review visits the second workspace for every skill" test \
+    "$(grep -cFx -- "$REVIEW_TIMER_LEGACY_WORKSPACE" "$REVIEW_TIMER_CLAUDE_CWD_LOG")" = 3
+  expect_ok "clean review files no bead-rs findings" \
+    test ! -e "$REVIEW_TIMER_BEAD_ISSUE"
+  expect_ok "clean review files no legacy findings" \
+    test ! -e "$REVIEW_TIMER_BF_ISSUE"
   expect_ok "plan review invokes claude with its skill" grep -qF -- \
-    'claude --print /plan-vs-built .' "$REVIEW_TIMER_CLAUDE_LOG"
-  expect_ok "repo-hygiene review passes --file-beads" grep -qF -- \
-    'claude --print /repo-hygiene --file-beads .' "$REVIEW_TIMER_CLAUDE_LOG"
+    '--print /plan-vs-built .' "$REVIEW_TIMER_CLAUDE_LOG"
+  expect_ok "repo-hygiene review invokes claude with its skill" grep -qF -- \
+    '--print /repo-hygiene .' "$REVIEW_TIMER_CLAUDE_LOG"
+
+  # A findings result is captured and filed through each target workspace's
+  # declared backend. The report is carried in the create call and the stable
+  # reference makes the bead-rs path idempotent.
+  REVIEW_TIMER_CLAUDE_MODE=findings
+  rm -f "$REVIEW_TIMER_BEAD_LOG" "$REVIEW_TIMER_BF_LOG"
+  for review_unit in plan-vs-built find-stubs repo-hygiene; do
+    # Reset the fake stores between skills so each review proves its own
+    # backend filing path; memory-tool below separately covers deduplication.
+    rm -f "$REVIEW_TIMER_BEAD_ISSUE" "$REVIEW_TIMER_BF_ISSUE"
+    capture_review_timer_review_runner "$review_unit"
+    assert_review_timer_rc 0 "finding $review_unit service succeeds"
+    assert_review_timer_output_has "finding $review_unit files a bead" \
+      'Filed review findings bead'
+  done
+  expect_ok "findings create one bead per review via bead-rs" test \
+    "$(grep -c '^bead create ' "$REVIEW_TIMER_BEAD_LOG")" = 3
+  expect_ok "findings create one bead per review via legacy bf" test \
+    "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG")" = 3
+  expect_ok "finding report reaches bead-rs description" grep -qF -- \
+    'review fixture: finding' "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "finding report reaches legacy description" grep -qF -- \
+    'review fixture: finding' "$REVIEW_TIMER_BF_LOG"
+  capture_review_timer_review_runner plan-vs-built
+  assert_review_timer_rc 0 "repeated finding service remains successful"
+  assert_review_timer_output_has "repeated finding is deduplicated" \
+    'Review findings already filed'
+  expect_ok "repeated finding keeps one bead-rs issue" \
+    test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
+  expect_ok "repeated finding does not create another legacy issue" test \
+    "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG")" = 3
+
+  # A failed Claude command is reported and leaves the service nonzero while
+  # the loop still attempts the next configured workspace.
+  REVIEW_TIMER_CLAUDE_MODE=fail
+  rm -f "$REVIEW_TIMER_CLAUDE_CWD_LOG"
+  capture_review_timer_review_runner plan-vs-built
+  assert_review_timer_rc 23 "failed review preserves Claude exit status"
+  assert_review_timer_output_has "failed review reports Claude failure" \
+    'plan-vs-built failed in '
+  expect_ok "failed review still visits every workspace" test \
+    "$(grep -cFx -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_CLAUDE_CWD_LOG")" = 1
+  expect_ok "failed review continues to the second workspace" test \
+    "$(grep -cFx -- "$REVIEW_TIMER_LEGACY_WORKSPACE" "$REVIEW_TIMER_CLAUDE_CWD_LOG")" = 1
 
   # An empty review workspace list has an explicit, successful no-op result.
   : >"$workspace_config"
