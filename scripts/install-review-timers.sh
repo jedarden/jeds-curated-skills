@@ -513,6 +513,32 @@ title="memory-tool check failure"
 description="memory-tool check failed in \$HOME_WORKSPACE with exit \$check_rc; diagnostic output is intentionally omitted to avoid credential disclosure."
 unique_ref="factory-review:memory-tool-check"
 create_rc=0
+bead_output="\$(mktemp "\${TMPDIR:-/tmp}/factory-review-memory-bead.XXXXXX")" || {
+  echo "memory-tool check failed; unable to capture bead identifier." >&2
+  exit \$check_rc
+}
+trap 'rm -f "\$bead_output"' EXIT
+
+# Successful bead creation prints an identifier (or `EXISTING ID` for an
+# idempotent replay). Read only that identifier back. In particular, never
+# replay the complete backend output because a backend error or renderer may
+# contain data that does not belong in the journal.
+bead_id_from_output() {
+  local line candidate
+  while IFS= read -r line; do
+    case "\$line" in
+      EXISTING\ *) candidate="\${line#EXISTING }" ;;
+      EXISTING_CLOSED\ *) candidate="\${line#EXISTING_CLOSED }" ;;
+      *) candidate="\$line" ;;
+    esac
+    if [[ "\$candidate" =~ ^[[:alnum:]_.:-]+\$ ]]; then
+      printf '%s\\n' "\$candidate"
+      return 0
+    fi
+  done <"\$bead_output"
+  return 1
+}
+
 if [[ "\$backend_kind" == "bf" ]]; then
   # Legacy bead-forge has no bead-rs --unique-ref flag. Its list operation is
   # the compatibility deduplication check; keep the query's output private as
@@ -527,8 +553,12 @@ if [[ "\$backend_kind" == "bf" ]]; then
       --priority 3 \\
       --type task \\
       --label factory-review \\
-      --label memory-tool >/dev/null 2>&1); then
-    create_rc=0
+      --label memory-tool >"\$bead_output" 2>/dev/null); then
+    if bead_id="\$(bead_id_from_output)"; then
+      echo "Filed memory-tool check failure bead \$bead_id in \$HOME_WORKSPACE."
+    else
+      echo "Filed memory-tool check failure bead in \$HOME_WORKSPACE (identifier unavailable)."
+    fi
   else
     create_rc=\$?
   fi
@@ -542,8 +572,16 @@ else
       --issue-type task \\
       --label factory-review \\
       --label memory-tool \\
-      --unique-ref "\$unique_ref" >/dev/null 2>&1); then
-    create_rc=0
+      --unique-ref "\$unique_ref" >"\$bead_output" 2>/dev/null); then
+    if bead_id="\$(bead_id_from_output)"; then
+      if grep -q '^EXISTING' "\$bead_output"; then
+        echo "Memory-tool check failure bead \$bead_id already exists in \$HOME_WORKSPACE; nothing new to file."
+      else
+        echo "Filed memory-tool check failure bead \$bead_id in \$HOME_WORKSPACE."
+      fi
+    else
+      echo "Filed memory-tool check failure bead in \$HOME_WORKSPACE (identifier unavailable)."
+    fi
   else
     create_rc=\$?
   fi
@@ -554,7 +592,6 @@ if [[ \$create_rc -ne 0 ]]; then
   exit \$check_rc
 fi
 
-echo "Filed (or already had) the memory-tool check failure bead in \$HOME_WORKSPACE."
 exit \$check_rc
 EOF
 }

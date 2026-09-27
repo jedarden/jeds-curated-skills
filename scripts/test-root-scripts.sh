@@ -849,7 +849,7 @@ test_review_timer_contracts() {
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 23 "failed bead-rs memory check preserves failure code"
   assert_review_timer_output_has "failed bead-rs check reports filing" \
-    'Filed (or already had) the memory-tool check failure bead'
+    'Filed memory-tool check failure bead fixture-memory-failure in '
   assert_review_timer_output_not_has "failed bead-rs check suppresses diagnostics" \
     'fixture-secret'
   expect_ok "failed bead-rs check creates one issue" \
@@ -865,6 +865,8 @@ test_review_timer_contracts() {
     grep -qF -- 'exit\ 23' "$REVIEW_TIMER_BEAD_LOG"
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 23 "repeated bead-rs failure preserves failure code"
+  assert_review_timer_output_has "repeated bead-rs failure identifies the existing bead" \
+    'Memory-tool check failure bead fixture-memory-failure already exists'
   expect_ok "repeated bead-rs failure remains one issue" \
     test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
 
@@ -873,6 +875,8 @@ test_review_timer_contracts() {
   rm -f "$REVIEW_TIMER_BF_LOG" "$REVIEW_TIMER_BF_ISSUE"
   capture_review_timer_runner "$REVIEW_TIMER_LEGACY_WORKSPACE"
   assert_review_timer_rc 23 "failed legacy memory check preserves failure code"
+  assert_review_timer_output_has "failed legacy check identifies the filed bead" \
+    'Filed memory-tool check failure bead fixture-memory-failure in '
   expect_ok "legacy filing uses the legacy type flag" \
     grep -qF -- '--type task' "$REVIEW_TIMER_BF_LOG"
   expect_ok "legacy filing excludes diagnostics" \
