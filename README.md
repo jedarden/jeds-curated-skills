@@ -101,7 +101,7 @@ Three suites run before each commit (via the pre-commit hook installed by `scrip
 | Suite | Covers |
 |-------|--------|
 | `scripts/validate-skills.sh` | Static structure per ADR-1: frontmatter schema, reference integrity, `bash -n`, executable bits, ShellCheck baseline ratchet |
-| `scripts/test-root-scripts.sh` | Documented contracts of the root scripts: `check-installed.sh` exit codes, `install.sh` flag behavior and out-of-tree statusline install, `install-hooks.sh` pre-commit hook install |
+| `scripts/test-root-scripts.sh` | Documented contracts of the root scripts, including the isolated factory-review timer install, re-install, dry-run, memory-failure, and uninstall fixtures |
 | `scripts/test-script-fixtures.sh` | The per-skill `SELF-TEST.md` script fixtures: each score/scan script's heredoc fixture replayed mechanically against its pinned counts, MISSING lists, and exit codes — any mismatch fails the commit or the push |
 
 The push path itself has an external heartbeat: `scripts/check-push-ci.sh`
@@ -120,6 +120,7 @@ together.
 To run any of them by hand:
 
 ```bash
+./scripts/test-root-scripts.sh    # includes factory-review timer fixtures
 ./scripts/test-script-fixtures.sh   # ~3s, no network, no LLM
 ```
 
@@ -342,15 +343,15 @@ keys and never displacing a `statusLine` that runs something else.
 
 ## Factory Review Timers
 
-For automated, scheduled review of multiple workspaces, install the weekly systemd --user timers:
+For automated, scheduled review of multiple workspaces, install the systemd `--user` timers:
 
 ```bash
 cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-This installs the four core review timers plus the repository's installed-skill drift timer,
-all staggered across the week:
+The installer manages four weekly workspace checks plus one machine-local drift check, all
+staggered across the week:
 
 | Timer | Schedule | Skill |
 |-------|----------|-------|
@@ -360,38 +361,136 @@ all staggered across the week:
 | `factory-review-memory-tool.timer` | Thu 02:00 | memory-tool check |
 | `factory-review-installed-drift.timer` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
 
-The three review timers read workspaces from `~/.config/factory-review/workspaces.txt` (one path per line) and run the corresponding skill, filing beads in each workspace as needed. The `memory-tool` timer is a host check: it runs once per week regardless of that workspace list, and on failure selects `bead` or `bf` from the home workspace's `.needle.yaml` before filing one bead there. A passing check prints `nothing to file`.
+### What gets installed
 
-The `installed-drift` timer is also machine-local rather than per-workspace: it runs `scripts/check-installed.sh` once a week from this repo (full sweep plus the `usage-statusline` out-of-tree deployed copy). On exit code 1 — drift detected — it files a bead in this repo's workspace, deduplicated while an open drift bead for that check already exists, and marks the systemd unit failed so the timer's last result is visible in `systemctl --user list-timers`. Without this timer the drift checker only runs when someone remembers to invoke it.
+The command must be run from the checkout whose skills and drift state should be reviewed. It
+requires a user systemd manager and these commands available to the installer or generated
+runners: `bash`, `systemctl`, `journalctl`, `claude`, `memory-tool`, and the bead CLI declared
+by each workspace (`bead` for bead-rs or `bf` for legacy bead-forge). The installer resolves
+`bash` with `command -v` and embeds that path in the service units, which also avoids assuming
+that `/bin/bash` exists. Each runner prepends `$HOME/.local/bin:$HOME/.cargo/bin` to `PATH` so
+user-installed `claude`, `memory-tool`, and bead CLIs are found under systemd.
 
-The installer is idempotent, reloads the user manager, and enables the generated timers when a user systemd manager is available. **To inspect or re-enable them:**
+The generated files are:
+
+```text
+~/.config/factory-review/workspaces.txt
+~/.config/factory-review/factory-review-*.sh
+~/.config/systemd/user/factory-review-*.service
+~/.config/systemd/user/factory-review-*.timer
+```
+
+Services are `Type=oneshot` units with a 30-minute timeout and `Nice=10`; output goes to the
+user journal. Timers use `Persistent=true`, so a missed scheduled run is considered when the
+user manager returns. Installation runs `systemctl --user daemon-reload` and
+`systemctl --user enable --now` for all five timers when the user manager is available. If it
+is not available, the generated files remain installed and the script prints the command to
+activate them later.
+
+The installer creates `~/.config/factory-review/workspaces.txt` with comments if it does not
+exist. Put one workspace path on each line. Blank lines and comments are ignored; `~` expands
+to `$HOME`, and other relative paths are also resolved relative to `$HOME`. Missing directories
+are skipped. The first three workspace timers invoke `claude --print` for their skill; the
+`repo-hygiene` invocation additionally passes `--file-beads`. A failure in one workspace is
+reported, but the remaining configured workspaces are still processed.
+
+The `memory-tool` timer is different: it is a host check, runs exactly once, and ignores
+`workspaces.txt`. It chooses its filing workspace from `FACTORY_REVIEW_HOME_WORKSPACE` when
+set, otherwise `$HOME/jeds-curated-skills`; when that default is not a workspace checkout, it
+falls back to the checkout from which the installer was run if that checkout has `.needle.yaml`
+and `.beads`.
+
+On failure, the generated memory runner reads `bead_cli.backend` from that workspace's
+`.needle.yaml`:
+
+- `bead-rs` (or `bead`) invokes `bead create --issue-type task` with the stable
+  `factory-review:memory-tool-check` unique reference, so repeated failures are idempotent.
+- `bf` (or `bead-forge`) invokes the legacy `bf create --type task` form and checks open items
+  first to avoid filing a duplicate.
+
+Both paths use the `factory-review` and `memory-tool` labels. The runner suppresses
+`memory-tool check` diagnostics, including credential-bearing output, and files only the safe
+failure status. A successful check prints exactly `memory-tool check passed; nothing to file.`
+If the check fails but the selected workspace has no bead store/backend, has an unsupported
+backend, or lacks the selected CLI on `PATH`, it prints an explicit `nothing to file` or
+`unable to file bead` outcome and returns the original check's failure code. A filing failure
+also preserves that check code; it never turns a failed check into a false success.
+
+The installed-drift timer is machine-local rather than per-workspace: it runs
+`scripts/check-installed.sh` once a week from this checkout, including the full skill sweep and
+the `usage-statusline` deployed copy. It ignores `workspaces.txt`. Exit 1 means drift was
+found, so it files one deduplicated bead in this checkout and leaves the service failed for
+inspection. Exit 2 means a usage/environment problem such as a missing `~/.claude/skills/`
+directory; it files no bead because that is not drift.
+
+An empty workspace list has an intentional, explicit outcome: workspace runners print
+`No configured workspaces; nothing to file.` and do not invent a finding. This does not disable
+the independent `memory-tool` or installed-drift checks.
+
+### Operate and inspect
+
+Re-running the installer from the same checkout is idempotent: it regenerates the same
+installer-owned service, timer, and runner files, reloads the user manager, and re-enables the
+timers without creating duplicate units.
 
 ```bash
+# Re-install or repair the generated units
+./scripts/install-review-timers.sh
+
 # Reload systemd
 systemctl --user daemon-reload
 
 # Enable all timers
 systemctl --user enable --now factory-review-*.timer
 
-# Check status
-systemctl --user list-timers | grep factory-review
+# List next/last runs for every factory-review timer
+systemctl --user list-timers --all | grep factory-review
 
-# Test a service manually
+# Inspect a timer and its last service result
+systemctl --user status factory-review-memory-tool.timer
+systemctl --user status factory-review-memory-tool.service
+
+# Run a service immediately, without waiting for its calendar time
 systemctl --user start factory-review-memory-tool.service
-journalctl --user -u factory-review-memory-tool.service
+journalctl --user -u factory-review-memory-tool.service --no-pager
+
+# The same manual form works for a workspace review
+systemctl --user start factory-review-plan-vs-built.service
 ```
 
-**Uninstall:**
+`systemctl --user list-timers --all` shows the staggered next-run time and the last result;
+`systemctl --user status` and `journalctl` show the unit's detailed outcome. In particular,
+the drift timer intentionally remains failed after exit 1 so its finding is visible in those
+inspections.
+
+Preview generation without creating the config directory, unit files, runner scripts, or
+systemd state:
+
+```bash
+./scripts/install-review-timers.sh --dry-run
+```
+
+Remove only the timers, services, and runner scripts owned by this installer with:
 
 ```bash
 ./scripts/install-review-timers.sh --uninstall
 ```
 
-**Dry-run (preview commands):**
+The workspace list is not removed. Uninstall stops and disables active/enabled timers before
+removing their files, then reloads the user manager; unrelated user units and scripts are
+left alone.
 
-```bash
-./scripts/install-review-timers.sh --dry-run
-```
+### Fixture verification
+
+The timer contract is covered by `scripts/test-root-scripts.sh`, which uses a temporary `HOME`,
+fake `systemctl`, fake `memory-tool`, and fake `bead`/`bf` CLIs. It never touches the real
+user manager, workspace list, or bead store. The fixture expectations are deliberately exact:
+the generated memory service has the oneshot/timeout/PATH settings, the Thursday schedule is
+present, a second install is byte-identical, `--dry-run` has no filesystem side effects, a
+passing memory check invokes no backend and reports `nothing to file`, diagnostics containing a
+fixture token are suppressed, both backend modes preserve the check's failure code and dedupe
+the filed issue, and `--uninstall` removes only installer-owned files. Keep those expectations
+in sync with this operator documentation when the timer contract changes.
 
 ## Philosophy
 
