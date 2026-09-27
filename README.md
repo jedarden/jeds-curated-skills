@@ -349,7 +349,8 @@ cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-This installs five staggered weekly timers:
+This installs the four core review timers plus the repository's installed-skill drift timer,
+all staggered across the week:
 
 | Timer | Schedule | Skill |
 |-------|----------|-------|
@@ -359,11 +360,11 @@ This installs five staggered weekly timers:
 | `factory-review-memory-tool.timer` | Thu 02:00 | memory-tool check |
 | `factory-review-installed-drift.timer` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
 
-Each timer reads workspaces from `~/.config/factory-review/workspaces.txt` (one path per line) and runs the corresponding skill, filing beads in each workspace as needed. The `memory-tool` timer runs once per week (not per-workspace) and files a bead in the home workspace if the check fails.
+The three review timers read workspaces from `~/.config/factory-review/workspaces.txt` (one path per line) and run the corresponding skill, filing beads in each workspace as needed. The `memory-tool` timer is a host check: it runs once per week regardless of that workspace list, and on failure selects `bead` or `bf` from the home workspace's `.needle.yaml` before filing one bead there. A passing check prints `nothing to file`.
 
 The `installed-drift` timer is also machine-local rather than per-workspace: it runs `scripts/check-installed.sh` once a week from this repo (full sweep plus the `usage-statusline` out-of-tree deployed copy). On exit code 1 — drift detected — it files a bead in this repo's workspace, deduplicated while an open drift bead for that check already exists, and marks the systemd unit failed so the timer's last result is visible in `systemctl --user list-timers`. Without this timer the drift checker only runs when someone remembers to invoke it.
 
-**After installation:**
+The installer is idempotent, reloads the user manager, and enables the generated timers when a user systemd manager is available. **To inspect or re-enable them:**
 
 ```bash
 # Reload systemd
