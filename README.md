@@ -350,10 +350,13 @@ cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-The installer manages four weekly workspace checks plus one machine-local drift check, all
-staggered across the week. The first four timers read `workspaces.txt`; the fifth checks this
-checkout's installed-skill drift and does not use that list. Each row installs the named
-`.timer`, its paired `.service`, and a runner script under `~/.config/factory-review/`:
+The installer manages four weekly workspace review timers plus one machine-local drift timer,
+staggered across Monday through Friday. The four review timers are
+`factory-review-plan-vs-built`, `factory-review-find-stubs`, `factory-review-repo-hygiene`, and
+`factory-review-memory-tool`; they read `workspaces.txt` as described below. The separate
+`factory-review-installed-drift` timer checks this checkout's installed-skill drift and does not
+use that list. Each row installs the named `.timer`, its paired `.service`, and a runner script
+under `~/.config/factory-review/`:
 
 | Timer | Service | Schedule | Action |
 |-------|---------|----------|--------|
@@ -369,12 +372,13 @@ The command must be run from the checkout whose skills and drift state should be
 installer itself needs `bash`; activating and inspecting the schedule needs a systemd user
 manager with `systemctl --user` and `journalctl --user`. The generated runners additionally
 need `claude` for the three workspace reviews, `memory-tool` for its host check, and the bead
-CLI declared by each workspace (`bead` for bead-rs or `bf` for legacy bead-forge). If no user
-manager is available, installation still writes the generated files and prints a warning; use
-the activation commands below later from a login session with a user bus. The installer
-resolves `bash` with `command -v` and embeds that path in the service units, which avoids
-assuming that `/bin/bash` exists. Each runner prepends `$HOME/.local/bin:$HOME/.cargo/bin` to
-`PATH` so user-installed commands are found under systemd.
+CLI declared by each workspace (`bead` for bead-rs or `bf` for legacy bead-forge). The
+installed-drift runner also needs `bead` in this checkout's workspace. If no user manager is
+available, installation still writes the generated files and prints a warning; use the
+activation commands below later from a login session with a user bus. The installer resolves
+`bash` with `command -v` and embeds that path in the service units, which avoids assuming that
+`/bin/bash` exists. Each runner prepends `$HOME/.local/bin:$HOME/.cargo/bin` to `PATH` so
+user-installed commands are found under systemd.
 
 The generated files are:
 
@@ -422,21 +426,23 @@ set, otherwise `$HOME/jeds-curated-skills`; when that default is not a workspace
 falls back to the checkout from which the installer was run if that checkout has `.needle.yaml`
 and `.beads`.
 
-On failure, the generated memory runner reads `bead_cli.backend` from that workspace's
-`.needle.yaml`:
+On failure, the runner prints only the exit status and attempts to file one safe failure bead;
+it never forwards `memory-tool`'s diagnostics to the journal or bead description. It reads
+`bead_cli.backend` from the selected workspace's `.needle.yaml`:
 
 - `bead-rs` (or `bead`) invokes `bead create --issue-type task` with the stable
   `factory-review:memory-tool-check` unique reference, so repeated failures are idempotent.
 - `bf` (or `bead-forge`) invokes the legacy `bf create --type task` form and checks open items
   first to avoid filing a duplicate.
 
-Both paths use the `factory-review` and `memory-tool` labels. The runner suppresses
-`memory-tool check` diagnostics, including credential-bearing output, and files only the safe
-failure status. A successful check prints exactly `memory-tool check passed; nothing to file.`
-If the check fails but the selected workspace has no bead store/backend, has an unsupported
-backend, or lacks the selected CLI on `PATH`, it prints an explicit `nothing to file` or
-`unable to file bead` outcome and returns the original check's failure code. A filing failure
-also preserves that check code; it never turns a failed check into a false success.
+Both paths use the `factory-review` and `memory-tool` labels. On a successful filing the runner
+prints only the returned bead identifier; a bead-rs replay reports that the existing bead was
+reused, and a legacy `bf` replay reports that an open duplicate already exists. A successful
+check prints exactly `memory-tool check passed; nothing to file.` If the check fails but the
+selected workspace has no bead store/backend, has an unsupported backend, or lacks the selected
+CLI on `PATH`, it prints an explicit `nothing to file` or `unable to file bead` outcome and
+returns the original check's failure code. A filing failure also preserves that check code; it
+never turns a failed check into a false success.
 
 The installed-drift timer is machine-local rather than per-workspace: it runs
 `scripts/check-installed.sh` once a week from this checkout, including the full skill sweep and
