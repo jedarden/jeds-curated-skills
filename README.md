@@ -501,15 +501,19 @@ left alone.
 
 ### Fixture verification
 
-The timer contract is covered by `scripts/test-root-scripts.sh`, which uses a temporary `HOME`,
-fake `systemctl`, fake `memory-tool`, and fake `bead`/`bf` CLIs. It never touches the real
-user manager, workspace list, or bead store. The fixture expectations are deliberately exact:
-the generated memory service has the oneshot/timeout/PATH settings, the Thursday schedule is
-present, a second install is byte-identical, `--dry-run` has no filesystem side effects, a
-passing memory check invokes no backend and reports `nothing to file`, diagnostics containing a
-fixture token are suppressed, both backend modes preserve the check's failure code and dedupe
-the filed issue, and `--uninstall` removes only installer-owned files. Keep those expectations
-in sync with this operator documentation when the timer contract changes.
+The complete timer lifecycle is covered by `scripts/test-root-scripts.sh` (run it with
+`bash scripts/test-root-scripts.sh`, expecting exit 0). It uses a temporary `HOME`, fake
+`systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs, so it never touches the
+real user manager, workspace list, or bead store. The fixture checks every generated service,
+timer, and runner (the four workspace review timers plus the installed-drift timer), including
+oneshot/timeout/Nice/PATH/journal properties, staggered calendars, persistent activation, and
+manual service execution. It also checks that repeated install is byte-identical, `--dry-run`
+prints the generated commands without filesystem side effects, a successful review is observable,
+an empty workspace list reports `No configured workspaces; nothing to file.`, a passing memory
+check files no bead, and failing bead-rs/legacy checks preserve their exit code while filing one
+deduplicated bead without exposing diagnostics. Finally, `--uninstall` removes every
+installer-owned artifact while preserving the workspace list and foreign files. Keep these
+expectations in sync with this operator documentation when the timer contract changes.
 
 ## Philosophy
 

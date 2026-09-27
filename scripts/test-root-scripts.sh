@@ -357,10 +357,11 @@ expect_ok() {
 
 # --- install-review-timers.sh fixtures --------------------------------------
 
-# These fixtures exercise the generated memory-tool runner without touching
-# the real user manager, home directory, or bead store. The fake bead CLIs
-# model the two backends' relevant contracts: bead-rs deduplicates through
-# --unique-ref, while legacy bf deduplicates by listing its open beads first.
+# These fixtures exercise the generated review and memory-tool runners without
+# touching the real user manager, home directory, or bead store. The fake
+# claude command records review execution, while the fake bead CLIs model the
+# two backends' relevant contracts: bead-rs deduplicates through --unique-ref,
+# while legacy bf deduplicates by listing its open beads first.
 REVIEW_TIMER_BASE=""
 REVIEW_TIMER_HOME=""
 REVIEW_TIMER_WORKSPACE=""
@@ -373,9 +374,13 @@ REVIEW_TIMER_BF_LOG=""
 REVIEW_TIMER_BEAD_ISSUE=""
 REVIEW_TIMER_BF_ISSUE=""
 REVIEW_TIMER_MEMORY_CWD_LOG=""
+REVIEW_TIMER_CLAUDE_LOG=""
+REVIEW_TIMER_CLAUDE_CWD_LOG=""
 REVIEW_TIMER_MODE="pass"
 REVIEW_TIMER_OUTPUT=""
 REVIEW_TIMER_RC=0
+REVIEW_TIMER_DRY_OUTPUT=""
+REVIEW_TIMER_DRY_RC=0
 
 new_review_timer_fixture() {
   REVIEW_TIMER_BASE="$(mktemp -d "${TMPDIR:-/tmp}/jcs-review-timers.XXXXXX")"
@@ -395,6 +400,8 @@ new_review_timer_fixture() {
   REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BASE/bead-issue-count"
   REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BASE/bf-issue-count"
   REVIEW_TIMER_MEMORY_CWD_LOG="$REVIEW_TIMER_BASE/memory-tool.cwd"
+  REVIEW_TIMER_CLAUDE_LOG="$REVIEW_TIMER_BASE/claude.log"
+  REVIEW_TIMER_CLAUDE_CWD_LOG="$REVIEW_TIMER_BASE/claude.cwd"
 
   mkdir -p "$REVIEW_TIMER_HOME/.local/bin" "$REVIEW_TIMER_SHIM" \
     "$REVIEW_TIMER_WORKSPACE/.beads" "$REVIEW_TIMER_LEGACY_WORKSPACE/.beads"
@@ -423,6 +430,17 @@ fi
 exit "${REVIEW_TIMER_FAILURE_RC:-23}"
 EOF
   chmod +x "$REVIEW_TIMER_HOME/.local/bin/memory-tool"
+
+  cat >"$REVIEW_TIMER_HOME/.local/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "${PWD:?}" >>"${REVIEW_TIMER_CLAUDE_CWD_LOG:?}"
+printf 'claude' >>"${REVIEW_TIMER_CLAUDE_LOG:?}"
+printf ' %q' "$@" >>"$REVIEW_TIMER_CLAUDE_LOG"
+printf '\n' >>"$REVIEW_TIMER_CLAUDE_LOG"
+printf '%s\n' 'review fixture: success'
+EOF
+  chmod +x "$REVIEW_TIMER_HOME/.local/bin/claude"
 
   cat >"$REVIEW_TIMER_HOME/.local/bin/bead" <<'EOF'
 #!/usr/bin/env bash
@@ -496,11 +514,33 @@ run_review_timer_runner() {
     "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
 }
 
+run_review_timer_review_runner() {
+  local unit_name="$1"
+  env HOME="$REVIEW_TIMER_HOME" PATH="$REVIEW_TIMER_PATH" \
+    REVIEW_TIMER_CLAUDE_LOG="$REVIEW_TIMER_CLAUDE_LOG" \
+    REVIEW_TIMER_CLAUDE_CWD_LOG="$REVIEW_TIMER_CLAUDE_CWD_LOG" \
+    "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-${unit_name}.sh"
+}
+
 capture_review_timer_runner() {
   local workspace="$1"
   REVIEW_TIMER_RC=0
   REVIEW_TIMER_OUTPUT="$(run_review_timer_runner "$workspace" 2>&1)" || \
     REVIEW_TIMER_RC=$?
+}
+
+capture_review_timer_review_runner() {
+  local unit_name="$1"
+  REVIEW_TIMER_RC=0
+  REVIEW_TIMER_OUTPUT="$(run_review_timer_review_runner "$unit_name" 2>&1)" || \
+    REVIEW_TIMER_RC=$?
+}
+
+capture_review_timer_dry_run() {
+  local dry_home="$1"
+  REVIEW_TIMER_DRY_RC=0
+  REVIEW_TIMER_DRY_OUTPUT="$(run_review_timer_dry_run "$dry_home" --dry-run 2>&1)" || \
+    REVIEW_TIMER_DRY_RC=$?
 }
 
 assert_review_timer_rc() {
@@ -509,6 +549,15 @@ assert_review_timer_rc() {
     log_pass "$label (exit $REVIEW_TIMER_RC)"
   else
     log_fail "$label — expected exit $expected, got $REVIEW_TIMER_RC"
+  fi
+}
+
+assert_review_timer_dry_rc() {
+  local expected="$1" label="$2"
+  if [[ "$REVIEW_TIMER_DRY_RC" == "$expected" ]]; then
+    log_pass "$label (exit $REVIEW_TIMER_DRY_RC)"
+  else
+    log_fail "$label — expected exit $expected, got $REVIEW_TIMER_DRY_RC"
   fi
 }
 
@@ -537,47 +586,120 @@ file_excludes() {
 
 test_review_timer_contracts() {
   echo ""
-  echo "=== install-review-timers.sh memory-tool fixtures ==="
+  echo "=== install-review-timers.sh lifecycle fixtures ==="
   new_review_timer_fixture
 
   expect_exit 0 "review-timer install exits 0" run_review_timer_install
 
   local unit_dir="$REVIEW_TIMER_HOME/.config/systemd/user"
-  local runner="$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
-  expect_ok "memory service is a oneshot" grep -qF 'Type=oneshot' \
-    "$unit_dir/factory-review-memory-tool.service"
-  expect_ok "memory service has the shared timeout" grep -qF 'TimeoutSec=30min' \
-    "$unit_dir/factory-review-memory-tool.service"
-  expect_ok "memory service has Nice=10" grep -qF 'Nice=10' \
-    "$unit_dir/factory-review-memory-tool.service"
-  expect_ok "memory service has the system PATH" grep -qF \
-    'Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin' \
-    "$unit_dir/factory-review-memory-tool.service"
-  expect_ok "memory timer has the staggered weekly schedule" grep -qF \
-    'OnCalendar=Thu 02:00' "$unit_dir/factory-review-memory-tool.timer"
-  expect_ok "memory runner is executable" test -x "$runner"
+  local unit_names=(
+    factory-review-plan-vs-built
+    factory-review-find-stubs
+    factory-review-repo-hygiene
+    factory-review-memory-tool
+    factory-review-installed-drift
+  )
+  local schedules=(
+    'Mon 02:00'
+    'Tue 02:00'
+    'Wed 02:00'
+    'Thu 02:00'
+    'Fri 02:00'
+  )
+  local unit service timer unit_runner snapshot_dir i
 
-  cp "$unit_dir/factory-review-memory-tool.service" \
-    "$REVIEW_TIMER_BASE/memory.service.first"
-  cp "$unit_dir/factory-review-memory-tool.timer" \
-    "$REVIEW_TIMER_BASE/memory.timer.first"
-  cp "$runner" "$REVIEW_TIMER_BASE/memory.runner.first"
+  # Every installer-owned unit has the same service guarantees. Check all
+  # five generated pairs, including the machine-local drift timer, rather
+  # than allowing the memory unit alone to stand in for the lifecycle.
+  snapshot_dir="$REVIEW_TIMER_BASE/first-install"
+  mkdir -p "$snapshot_dir"
+  for i in "${!unit_names[@]}"; do
+    unit="${unit_names[$i]}"
+    service="$unit_dir/$unit.service"
+    timer="$unit_dir/$unit.timer"
+    unit_runner="$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
+    expect_ok "$unit service is a oneshot" grep -qF 'Type=oneshot' "$service"
+    expect_ok "$unit service has the shared timeout" grep -qF 'TimeoutSec=30min' "$service"
+    expect_ok "$unit service has Nice=10" grep -qF 'Nice=10' "$service"
+    expect_ok "$unit service has the system PATH" grep -qF \
+      'Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin' \
+      "$service"
+    expect_ok "$unit service runs from the home directory" grep -qF \
+      'WorkingDirectory=%h' "$service"
+    expect_ok "$unit service does not restart" grep -qF 'Restart=no' "$service"
+    expect_ok "$unit service sends stdout to the journal" grep -qF \
+      'StandardOutput=journal' "$service"
+    expect_ok "$unit service sends stderr to the journal" grep -qF \
+      'StandardError=journal' "$service"
+    expect_ok "$unit timer requires its service" grep -qF \
+      "Requires=$unit.service" "$timer"
+    expect_ok "$unit timer has its staggered weekly schedule" grep -qF \
+      "OnCalendar=${schedules[$i]}" "$timer"
+    expect_ok "$unit timer is persistent" grep -qF 'Persistent=true' "$timer"
+    expect_ok "$unit timer is installable" grep -qF 'WantedBy=timers.target' "$timer"
+    expect_ok "$unit runner is executable" test -x "$unit_runner"
+    cp "$service" "$snapshot_dir/$unit.service"
+    cp "$timer" "$snapshot_dir/$unit.timer"
+    cp "$unit_runner" "$snapshot_dir/$unit.sh"
+  done
+
+  expect_ok "install requests a user-manager reload" grep -qF \
+    -- '--user daemon-reload' "$REVIEW_TIMER_SYSTEMCTL_LOG"
+  expect_ok "install enables every generated timer" grep -qF \
+    -- '--user enable --now factory-review-plan-vs-built.timer factory-review-find-stubs.timer factory-review-repo-hygiene.timer factory-review-memory-tool.timer factory-review-installed-drift.timer' \
+    "$REVIEW_TIMER_SYSTEMCTL_LOG"
+
   expect_exit 0 "review-timer re-install exits 0" run_review_timer_install
-  expect_ok "re-install preserves the memory service byte-for-byte" cmp -s \
-    "$REVIEW_TIMER_BASE/memory.service.first" \
-    "$unit_dir/factory-review-memory-tool.service"
-  expect_ok "re-install preserves the memory timer byte-for-byte" cmp -s \
-    "$REVIEW_TIMER_BASE/memory.timer.first" \
-    "$unit_dir/factory-review-memory-tool.timer"
-  expect_ok "re-install preserves the memory runner byte-for-byte" cmp -s \
-    "$REVIEW_TIMER_BASE/memory.runner.first" "$runner"
+  for unit in "${unit_names[@]}"; do
+    expect_ok "re-install preserves $unit service byte-for-byte" cmp -s \
+      "$snapshot_dir/$unit.service" "$unit_dir/$unit.service"
+    expect_ok "re-install preserves $unit timer byte-for-byte" cmp -s \
+      "$snapshot_dir/$unit.timer" "$unit_dir/$unit.timer"
+    expect_ok "re-install preserves $unit runner byte-for-byte" cmp -s \
+      "$snapshot_dir/$unit.sh" \
+      "$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
+  done
 
   local dry_home="$REVIEW_TIMER_BASE/dry-home"
   mkdir -p "$dry_home"
-  expect_exit 0 "review-timer dry-run exits 0" run_review_timer_dry_run \
-    "$dry_home" --dry-run
+  capture_review_timer_dry_run "$dry_home"
+  assert_review_timer_dry_rc 0 "review-timer dry-run exits 0"
+  expect_ok "review-timer dry-run prints generated units" grep -qF \
+    'factory-review-plan-vs-built.service' <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  expect_ok "review-timer dry-run prints the final timer" grep -qF \
+    'factory-review-installed-drift.timer' <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  expect_ok "review-timer dry-run prints daemon-reload" grep -qF \
+    'systemctl --user daemon-reload' <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  expect_ok "review-timer dry-run prints timer activation" grep -qF \
+    'systemctl --user enable --now' <<<"$REVIEW_TIMER_DRY_OUTPUT"
   expect_ok "review-timer dry-run has no filesystem side effects" \
     test ! -e "$dry_home/.config"
+
+  # Manually execute each workspace review service in a configured fixture.
+  # The fake claude records its cwd and arguments, then emits a successful
+  # review result; no real agent or workspace is contacted.
+  local workspace_config="$REVIEW_TIMER_HOME/.config/factory-review/workspaces.txt"
+  printf '%s\n' "$REVIEW_TIMER_WORKSPACE" >"$workspace_config"
+  local review_unit
+  for review_unit in plan-vs-built find-stubs repo-hygiene; do
+    capture_review_timer_review_runner "$review_unit"
+    assert_review_timer_rc 0 "manual $review_unit service succeeds"
+    assert_review_timer_output_has "manual $review_unit service reports success" \
+      'review fixture: success'
+  done
+  expect_ok "review service executes in the fixture workspace" \
+    grep -qFx -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_CLAUDE_CWD_LOG"
+  expect_ok "plan review invokes claude with its skill" grep -qF -- \
+    'claude --print /plan-vs-built .' "$REVIEW_TIMER_CLAUDE_LOG"
+  expect_ok "repo-hygiene review passes --file-beads" grep -qF -- \
+    'claude --print /repo-hygiene --file-beads .' "$REVIEW_TIMER_CLAUDE_LOG"
+
+  # An empty review workspace list has an explicit, successful no-op result.
+  : >"$workspace_config"
+  capture_review_timer_review_runner plan-vs-built
+  assert_review_timer_rc 0 "empty review workspace service succeeds"
+  assert_review_timer_output_has "empty review reports nothing to file" \
+    'No configured workspaces; nothing to file.'
 
   # A passing check must not invoke a backend and must not expose the fake
   # token that the fixture emits on stderr.
@@ -643,11 +765,19 @@ test_review_timer_contracts() {
   printf 'foreign timer\n' >"$foreign_unit"
   printf 'foreign runner\n' >"$foreign_runner"
   expect_exit 0 "review-timer uninstall exits 0" run_review_timer_install --uninstall
-  expect_ok "uninstall removes the memory service" \
-    test ! -e "$unit_dir/factory-review-memory-tool.service"
-  expect_ok "uninstall removes the memory timer" \
-    test ! -e "$unit_dir/factory-review-memory-tool.timer"
-  expect_ok "uninstall removes the memory runner" test ! -e "$runner"
+  for unit in "${unit_names[@]}"; do
+    expect_ok "uninstall removes $unit service" \
+      test ! -e "$unit_dir/$unit.service"
+    expect_ok "uninstall removes $unit timer" \
+      test ! -e "$unit_dir/$unit.timer"
+    expect_ok "uninstall removes $unit runner" \
+      test ! -e "$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
+    expect_ok "uninstall stops $unit before removal" grep -qF \
+      -- "--user stop $unit.timer" "$REVIEW_TIMER_SYSTEMCTL_LOG"
+    expect_ok "uninstall disables $unit before removal" grep -qF \
+      -- "--user disable $unit.timer" "$REVIEW_TIMER_SYSTEMCTL_LOG"
+  done
+  expect_ok "uninstall preserves the workspace list" test -f "$workspace_config"
   expect_ok "uninstall preserves a foreign unit" test -e "$foreign_unit"
   expect_ok "uninstall preserves a foreign runner" test -e "$foreign_runner"
 }
