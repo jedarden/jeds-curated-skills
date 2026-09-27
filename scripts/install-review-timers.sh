@@ -520,7 +520,7 @@ bead_output="\$(mktemp "\${TMPDIR:-/tmp}/factory-review-memory-bead.XXXXXX")" ||
 }
 trap 'rm -f "\$bead_output"' EXIT
 
-# Successful bead creation prints an identifier (or `EXISTING ID` for an
+# Successful bead creation prints an identifier (or \`EXISTING ID\` for an
 # idempotent replay). Read only that identifier back. In particular, never
 # replay the complete backend output because a backend error or renderer may
 # contain data that does not belong in the journal.
