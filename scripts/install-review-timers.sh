@@ -316,15 +316,14 @@ if [[ ! -f "\$HOME_WORKSPACE/.needle.yaml" || ! -d "\$HOME_WORKSPACE/.beads" ]];
   fi
 fi
 
-check_output=""
+# Suppress diagnostics so a check cannot accidentally copy a token or other
+# credential-bearing output into the systemd journal or the filed bead. The
+# exit code is the durable finding; diagnostic detail is intentionally omitted.
 check_rc=0
-if check_output="\$(memory-tool check 2>&1)"; then
+if memory-tool check >/dev/null 2>&1; then
   check_rc=0
 else
   check_rc=\$?
-fi
-if [[ -n "\$check_output" ]]; then
-  printf '%s\\n' "\$check_output"
 fi
 
 if [[ \$check_rc -eq 0 ]]; then
@@ -345,8 +344,14 @@ if [[ ! -d "\$HOME_WORKSPACE/.beads" || -z "\$backend" ]]; then
 fi
 
 case "\$backend" in
-  bead-rs) bead_cli="bead" ;;
-  bf) bead_cli="bf" ;;
+  bead-rs|bead)
+    bead_cli="bead"
+    backend_kind="bead-rs"
+    ;;
+  bf|bead-forge)
+    bead_cli="bf"
+    backend_kind="bf"
+    ;;
   *)
     echo "memory-tool check failed; nothing to file: unsupported bead backend '\$backend'."
     exit \$check_rc
@@ -358,27 +363,47 @@ if ! command -v "\$bead_cli" >/dev/null 2>&1; then
   exit \$check_rc
 fi
 
-description="memory-tool check failed with exit \$check_rc; see this service's journal for its output."
-create_output=""
+title="memory-tool check failure"
+description="memory-tool check failed with exit \$check_rc; diagnostic output is intentionally omitted to avoid credential disclosure."
+unique_ref="factory-review:memory-tool-check"
 create_rc=0
-if create_output="\$(cd "\$HOME_WORKSPACE" && "\$bead_cli" create \\
-    --title "memory-tool check failure" \\
-    --description "\$description" \\
-    --priority 3 \\
-    --issue-type task \\
-    --label factory-review \\
-    --label memory-tool \\
-    --unique-ref factory-review:memory-tool-check 2>&1)"; then
-  create_rc=0
+if [[ "\$backend_kind" == "bf" ]]; then
+  # Legacy bead-forge has no bead-rs --unique-ref flag. Its list operation is
+  # the compatibility deduplication check; keep the query's output private as
+  # well because backend renderers may include the full description.
+  if (cd "\$HOME_WORKSPACE" && "\$bead_cli" list --status open 2>/dev/null) \\
+      | grep -qF -- "\$title"; then
+    echo "An open memory-tool check failure bead already exists; nothing new to file."
+  elif (cd "\$HOME_WORKSPACE" && "\$bead_cli" create \\
+      --title "\$title" \\
+      --description "\$description" \\
+      --priority 3 \\
+      --type task \\
+      --label factory-review \\
+      --label memory-tool >/dev/null 2>&1); then
+    create_rc=0
+  else
+    create_rc=\$?
+  fi
 else
-  create_rc=\$?
-fi
-if [[ -n "\$create_output" ]]; then
-  printf '%s\\n' "\$create_output"
+  # bead-rs provides atomic idempotency, so concurrent timer retries and
+  # repeated weekly failures resolve to one stable finding.
+  if (cd "\$HOME_WORKSPACE" && "\$bead_cli" create \\
+      --title "\$title" \\
+      --description "\$description" \\
+      --priority 3 \\
+      --issue-type task \\
+      --label factory-review \\
+      --label memory-tool \\
+      --unique-ref "\$unique_ref" >/dev/null 2>&1); then
+    create_rc=0
+  else
+    create_rc=\$?
+  fi
 fi
 
 if [[ \$create_rc -ne 0 ]]; then
-  echo "memory-tool check failed; bead filing failed in \$HOME_WORKSPACE." >&2
+  echo "memory-tool check failed; bead filing failed in \$HOME_WORKSPACE (backend exit \$create_rc)." >&2
   exit \$check_rc
 fi
 

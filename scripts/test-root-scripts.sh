@@ -86,6 +86,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CHECK_INSTALLED="$REPO_ROOT/scripts/check-installed.sh"
 INSTALL="$REPO_ROOT/install.sh"
+REVIEW_TIMER_INSTALL="$REPO_ROOT/scripts/install-review-timers.sh"
 
 # Drop the ambient git context — same fix as test-script-fixtures.sh, for the
 # same reason: the pre-commit hook runs this suite with git's environment
@@ -352,6 +353,293 @@ expect_ok() {
   else
     log_fail "$label"
   fi
+}
+
+# --- install-review-timers.sh fixtures --------------------------------------
+
+# These fixtures exercise the generated memory-tool runner without touching
+# the real user manager, home directory, or bead store. The fake bead CLIs
+# model the two backends' relevant contracts: bead-rs deduplicates through
+# --unique-ref, while legacy bf deduplicates by listing its open beads first.
+REVIEW_TIMER_BASE=""
+REVIEW_TIMER_HOME=""
+REVIEW_TIMER_WORKSPACE=""
+REVIEW_TIMER_LEGACY_WORKSPACE=""
+REVIEW_TIMER_SHIM=""
+REVIEW_TIMER_PATH=""
+REVIEW_TIMER_SYSTEMCTL_LOG=""
+REVIEW_TIMER_BEAD_LOG=""
+REVIEW_TIMER_BF_LOG=""
+REVIEW_TIMER_BEAD_ISSUE=""
+REVIEW_TIMER_BF_ISSUE=""
+REVIEW_TIMER_MODE="pass"
+REVIEW_TIMER_OUTPUT=""
+REVIEW_TIMER_RC=0
+
+new_review_timer_fixture() {
+  REVIEW_TIMER_BASE="$(mktemp -d "${TMPDIR:-/tmp}/jcs-review-timers.XXXXXX")"
+  if [[ "$REVIEW_TIMER_BASE" != "${TMPDIR:-/tmp}"/* ]]; then
+    echo -e "${RED}review-timer fixture escaped tmp: $REVIEW_TIMER_BASE${NC}" >&2
+    exit 1
+  fi
+  FAKE_REPOS+=("$REVIEW_TIMER_BASE")
+
+  REVIEW_TIMER_HOME="$REVIEW_TIMER_BASE/home"
+  REVIEW_TIMER_WORKSPACE="$REVIEW_TIMER_BASE/home-workspace"
+  REVIEW_TIMER_LEGACY_WORKSPACE="$REVIEW_TIMER_BASE/legacy-workspace"
+  REVIEW_TIMER_SHIM="$REVIEW_TIMER_BASE/shim"
+  REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_BASE/systemctl.log"
+  REVIEW_TIMER_BEAD_LOG="$REVIEW_TIMER_BASE/bead.log"
+  REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BASE/bf.log"
+  REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BASE/bead-issue-count"
+  REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BASE/bf-issue-count"
+
+  mkdir -p "$REVIEW_TIMER_HOME/.local/bin" "$REVIEW_TIMER_SHIM" \
+    "$REVIEW_TIMER_WORKSPACE/.beads" "$REVIEW_TIMER_LEGACY_WORKSPACE/.beads"
+  : >"$REVIEW_TIMER_SYSTEMCTL_LOG"
+
+  cat >"$REVIEW_TIMER_SHIM/systemctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${REVIEW_TIMER_SYSTEMCTL_LOG:?}"
+exit 0
+EOF
+  chmod +x "$REVIEW_TIMER_SHIM/systemctl"
+  REVIEW_TIMER_PATH="$REVIEW_TIMER_SHIM:$PATH"
+
+  printf 'bead_cli:\n  backend: bead-rs\n' >"$REVIEW_TIMER_WORKSPACE/.needle.yaml"
+  printf '{}\n' >"$REVIEW_TIMER_WORKSPACE/.beads/config.json"
+  printf 'bead_cli:\n  backend: bf\n' >"$REVIEW_TIMER_LEGACY_WORKSPACE/.needle.yaml"
+  printf 'backend: bf\n' >"$REVIEW_TIMER_LEGACY_WORKSPACE/.beads/config.yaml"
+
+  cat >"$REVIEW_TIMER_HOME/.local/bin/memory-tool" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' 'diagnostic token=fixture-secret' >&2
+if [[ "${REVIEW_TIMER_MODE:-pass}" == pass ]]; then
+  exit 0
+fi
+exit "${REVIEW_TIMER_FAILURE_RC:-23}"
+EOF
+  chmod +x "$REVIEW_TIMER_HOME/.local/bin/memory-tool"
+
+  cat >"$REVIEW_TIMER_HOME/.local/bin/bead" <<'EOF'
+#!/usr/bin/env bash
+set -u
+printf 'bead' >>"${REVIEW_TIMER_BEAD_LOG:?}"
+printf ' %q' "$@" >>"$REVIEW_TIMER_BEAD_LOG"
+printf '\n' >>"$REVIEW_TIMER_BEAD_LOG"
+if [[ "${1:-}" != create ]]; then
+  exit 2
+fi
+if [[ -e "${REVIEW_TIMER_BEAD_ISSUE:?}" ]]; then
+  printf 'EXISTING fixture-memory-failure\n'
+else
+  printf '1\n' >"$REVIEW_TIMER_BEAD_ISSUE"
+  printf 'fixture-memory-failure\n'
+fi
+EOF
+  chmod +x "$REVIEW_TIMER_HOME/.local/bin/bead"
+
+  cat >"$REVIEW_TIMER_HOME/.local/bin/bf" <<'EOF'
+#!/usr/bin/env bash
+set -u
+printf 'bf' >>"${REVIEW_TIMER_BF_LOG:?}"
+printf ' %q' "$@" >>"$REVIEW_TIMER_BF_LOG"
+printf '\n' >>"$REVIEW_TIMER_BF_LOG"
+if [[ "${1:-}" == list ]]; then
+  if [[ -e "${REVIEW_TIMER_BF_ISSUE:?}" ]]; then
+    printf '%s\n' 'memory-tool check failure'
+  fi
+  exit 0
+fi
+if [[ "${1:-}" != create ]]; then
+  exit 2
+fi
+if [[ -e "${REVIEW_TIMER_BF_ISSUE:?}" ]]; then
+  printf 'unexpected duplicate\n' >&2
+  exit 3
+fi
+printf '1\n' >"$REVIEW_TIMER_BF_ISSUE"
+printf 'fixture-memory-failure\n'
+EOF
+  chmod +x "$REVIEW_TIMER_HOME/.local/bin/bf"
+}
+
+run_review_timer_install() {
+  env HOME="$REVIEW_TIMER_HOME" PATH="$REVIEW_TIMER_PATH" \
+    REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    bash "$REVIEW_TIMER_INSTALL" "$@"
+}
+
+run_review_timer_dry_run() {
+  local dry_home="$1"
+  shift
+  env HOME="$dry_home" PATH="$REVIEW_TIMER_PATH" \
+    REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    bash "$REVIEW_TIMER_INSTALL" "$@"
+}
+
+run_review_timer_runner() {
+  local workspace="$1"
+  env HOME="$REVIEW_TIMER_HOME" PATH="$REVIEW_TIMER_PATH" \
+    FACTORY_REVIEW_HOME_WORKSPACE="$workspace" \
+    REVIEW_TIMER_MODE="$REVIEW_TIMER_MODE" \
+    REVIEW_TIMER_FAILURE_RC=23 \
+    REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    REVIEW_TIMER_BEAD_LOG="$REVIEW_TIMER_BEAD_LOG" \
+    REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BF_LOG" \
+    REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BEAD_ISSUE" \
+    REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BF_ISSUE" \
+    "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
+}
+
+capture_review_timer_runner() {
+  local workspace="$1"
+  REVIEW_TIMER_RC=0
+  REVIEW_TIMER_OUTPUT="$(run_review_timer_runner "$workspace" 2>&1)" || \
+    REVIEW_TIMER_RC=$?
+}
+
+assert_review_timer_rc() {
+  local expected="$1" label="$2"
+  if [[ "$REVIEW_TIMER_RC" == "$expected" ]]; then
+    log_pass "$label (exit $REVIEW_TIMER_RC)"
+  else
+    log_fail "$label — expected exit $expected, got $REVIEW_TIMER_RC"
+  fi
+}
+
+assert_review_timer_output_has() {
+  local label="$1" needle="$2"
+  if grep -qF -- "$needle" <<<"$REVIEW_TIMER_OUTPUT"; then
+    log_pass "$label"
+  else
+    log_fail "$label — output did not contain expected status"
+  fi
+}
+
+assert_review_timer_output_not_has() {
+  local label="$1" needle="$2"
+  if grep -qF -- "$needle" <<<"$REVIEW_TIMER_OUTPUT"; then
+    log_fail "$label — sensitive fixture text was exposed"
+  else
+    log_pass "$label"
+  fi
+}
+
+file_excludes() {
+  local needle="$1" file="$2"
+  [[ ! -e "$file" ]] || ! grep -qF -- "$needle" "$file"
+}
+
+test_review_timer_contracts() {
+  echo ""
+  echo "=== install-review-timers.sh memory-tool fixtures ==="
+  new_review_timer_fixture
+
+  expect_exit 0 "review-timer install exits 0" run_review_timer_install
+
+  local unit_dir="$REVIEW_TIMER_HOME/.config/systemd/user"
+  local runner="$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
+  expect_ok "memory service is a oneshot" grep -qF 'Type=oneshot' \
+    "$unit_dir/factory-review-memory-tool.service"
+  expect_ok "memory service has the shared timeout" grep -qF 'TimeoutSec=30min' \
+    "$unit_dir/factory-review-memory-tool.service"
+  expect_ok "memory service has Nice=10" grep -qF 'Nice=10' \
+    "$unit_dir/factory-review-memory-tool.service"
+  expect_ok "memory service has the system PATH" grep -qF \
+    'Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin' \
+    "$unit_dir/factory-review-memory-tool.service"
+  expect_ok "memory timer has the staggered weekly schedule" grep -qF \
+    'OnCalendar=Thu 02:00' "$unit_dir/factory-review-memory-tool.timer"
+  expect_ok "memory runner is executable" test -x "$runner"
+
+  cp "$unit_dir/factory-review-memory-tool.service" \
+    "$REVIEW_TIMER_BASE/memory.service.first"
+  cp "$unit_dir/factory-review-memory-tool.timer" \
+    "$REVIEW_TIMER_BASE/memory.timer.first"
+  cp "$runner" "$REVIEW_TIMER_BASE/memory.runner.first"
+  expect_exit 0 "review-timer re-install exits 0" run_review_timer_install
+  expect_ok "re-install preserves the memory service byte-for-byte" cmp -s \
+    "$REVIEW_TIMER_BASE/memory.service.first" \
+    "$unit_dir/factory-review-memory-tool.service"
+  expect_ok "re-install preserves the memory timer byte-for-byte" cmp -s \
+    "$REVIEW_TIMER_BASE/memory.timer.first" \
+    "$unit_dir/factory-review-memory-tool.timer"
+  expect_ok "re-install preserves the memory runner byte-for-byte" cmp -s \
+    "$REVIEW_TIMER_BASE/memory.runner.first" "$runner"
+
+  local dry_home="$REVIEW_TIMER_BASE/dry-home"
+  mkdir -p "$dry_home"
+  expect_exit 0 "review-timer dry-run exits 0" run_review_timer_dry_run \
+    "$dry_home" --dry-run
+  expect_ok "review-timer dry-run has no filesystem side effects" \
+    test ! -e "$dry_home/.config"
+
+  # A passing check must not invoke a backend and must not expose the fake
+  # token that the fixture emits on stderr.
+  REVIEW_TIMER_MODE=pass
+  rm -f "$REVIEW_TIMER_BEAD_LOG" "$REVIEW_TIMER_BEAD_ISSUE"
+  capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
+  assert_review_timer_rc 0 "passing memory check succeeds"
+  assert_review_timer_output_has "passing check reports nothing to file" \
+    'memory-tool check passed; nothing to file.'
+  assert_review_timer_output_not_has "passing check suppresses diagnostics" \
+    'fixture-secret'
+  expect_ok "passing check files no bead" \
+    test ! -e "$REVIEW_TIMER_BEAD_ISSUE"
+  expect_ok "passing check never invokes bead-rs" \
+    test ! -e "$REVIEW_TIMER_BEAD_LOG"
+
+  # A failed bead-rs check returns the check's failure code, files one stable
+  # issue, and remains idempotent on the next failed run.
+  REVIEW_TIMER_MODE=fail
+  capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
+  assert_review_timer_rc 23 "failed bead-rs memory check preserves failure code"
+  assert_review_timer_output_has "failed bead-rs check reports filing" \
+    'Filed (or already had) the memory-tool check failure bead'
+  assert_review_timer_output_not_has "failed bead-rs check suppresses diagnostics" \
+    'fixture-secret'
+  expect_ok "failed bead-rs check creates one issue" \
+    test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
+  expect_ok "bead-rs filing uses the stable unique reference" \
+    grep -qF -- '--unique-ref factory-review:memory-tool-check' \
+    "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "bead-rs filing excludes diagnostics" \
+    file_excludes 'fixture-secret' "$REVIEW_TIMER_BEAD_LOG"
+  capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
+  assert_review_timer_rc 23 "repeated bead-rs failure preserves failure code"
+  expect_ok "repeated bead-rs failure remains one issue" \
+    test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
+
+  # The legacy backend uses its own create flag spelling and list-based
+  # deduplication; it must receive the same failure exactly once.
+  rm -f "$REVIEW_TIMER_BF_LOG" "$REVIEW_TIMER_BF_ISSUE"
+  capture_review_timer_runner "$REVIEW_TIMER_LEGACY_WORKSPACE"
+  assert_review_timer_rc 23 "failed legacy memory check preserves failure code"
+  expect_ok "legacy filing uses the legacy type flag" \
+    grep -qF -- '--type task' "$REVIEW_TIMER_BF_LOG"
+  expect_ok "legacy filing excludes diagnostics" \
+    file_excludes 'fixture-secret' "$REVIEW_TIMER_BF_LOG"
+  capture_review_timer_runner "$REVIEW_TIMER_LEGACY_WORKSPACE"
+  assert_review_timer_rc 23 "repeated legacy failure preserves failure code"
+  expect_ok "repeated legacy failure remains one issue" \
+    test "$(<"$REVIEW_TIMER_BF_ISSUE")" = 1
+  expect_ok "legacy rerun does not create a second bead" \
+    test "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG" || true)" = 1
+
+  # Only the units and runner files owned by this installer may disappear.
+  local foreign_unit="$unit_dir/foreign.timer"
+  local foreign_runner="$REVIEW_TIMER_HOME/.config/factory-review/foreign.sh"
+  printf 'foreign timer\n' >"$foreign_unit"
+  printf 'foreign runner\n' >"$foreign_runner"
+  expect_exit 0 "review-timer uninstall exits 0" run_review_timer_install --uninstall
+  expect_ok "uninstall removes the memory service" \
+    test ! -e "$unit_dir/factory-review-memory-tool.service"
+  expect_ok "uninstall removes the memory timer" \
+    test ! -e "$unit_dir/factory-review-memory-tool.timer"
+  expect_ok "uninstall removes the memory runner" test ! -e "$runner"
+  expect_ok "uninstall preserves a foreign unit" test -e "$foreign_unit"
+  expect_ok "uninstall preserves a foreign runner" test -e "$foreign_runner"
 }
 
 # --- check-installed.sh exit codes -----------------------------------------
@@ -805,6 +1093,7 @@ main() {
   test_stale_inline_contracts
   test_install_contracts
   test_install_hooks_contracts
+  test_review_timer_contracts
   test_statusline_contracts
   test_push_ci_contracts
 
