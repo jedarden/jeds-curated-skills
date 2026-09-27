@@ -973,9 +973,14 @@ test_review_timer_contracts() {
   local colliding_service="$unit_dir/$colliding_unit.service"
   local colliding_timer="$unit_dir/$colliding_unit.timer"
   local colliding_runner="$REVIEW_TIMER_HOME/.config/factory-review/$colliding_unit.sh"
-  printf 'foreign service\n' >"$colliding_service"
-  printf 'foreign timer\n' >"$colliding_timer"
-  printf 'foreign runner\n' >"$colliding_runner"
+  # A copied marker in the wrong location is not proof of ownership. This
+  # protects an unrelated unit whose payload happens to mention the marker.
+  printf 'foreign service\nunrelated setting\n# Managed by install-review-timers.sh\n' \
+    >"$colliding_service"
+  printf 'foreign timer\nunrelated setting\n# Managed by install-review-timers.sh\n' \
+    >"$colliding_timer"
+  printf 'foreign runner\nunrelated setting\nanother setting\n# Managed by install-review-timers.sh\n' \
+    >"$colliding_runner"
   : >"$REVIEW_TIMER_SYSTEMCTL_LOG"
   expect_exit 1 "review-timer install rejects same-named foreign files" \
     run_review_timer_install
