@@ -438,11 +438,11 @@ it never forwards `memory-tool`'s diagnostics to the journal or bead description
 Both paths use the `factory-review` and `memory-tool` labels. On a successful filing the runner
 prints only the returned bead identifier; a bead-rs replay reports that the existing bead was
 reused, and a legacy `bf` replay reports that an open duplicate already exists. A successful
-check prints exactly `memory-tool check passed; nothing to file.` If the check fails but the
-selected workspace has no bead store/backend, has an unsupported backend, or lacks the selected
-CLI on `PATH`, it prints an explicit `nothing to file` or `unable to file bead` outcome and
-returns the original check's failure code. A filing failure also preserves that check code; it
-never turns a failed check into a false success.
+check prints `memory-tool check passed; nothing to file.` followed by an explicit `No bead
+needed.` result. If the check fails but the selected workspace has no bead store/backend, has an
+unsupported backend, or lacks the selected CLI on `PATH`, it prints an explicit `nothing to file`
+or `unable to file bead` outcome and returns the original check's failure code. A filing failure
+also preserves that check code; it never turns a failed check into a false success.
 
 The installed-drift timer is machine-local rather than per-workspace: it runs
 `scripts/check-installed.sh` once a week from this checkout, including the full skill sweep and

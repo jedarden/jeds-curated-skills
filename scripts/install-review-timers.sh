@@ -474,6 +474,7 @@ fi
 
 if [[ \$check_rc -eq 0 ]]; then
   echo "memory-tool check passed; nothing to file."
+  echo "No bead needed."
   exit 0
 fi
 
@@ -550,7 +551,7 @@ if [[ "\$backend_kind" == "bf" ]]; then
   elif (cd "\$HOME_WORKSPACE" && "\$bead_cli" create \\
       --title "\$title" \\
       --description "\$description" \\
-      --priority 3 \\
+      --priority p3 \\
       --type task \\
       --label factory-review \\
       --label memory-tool >"\$bead_output" 2>/dev/null); then

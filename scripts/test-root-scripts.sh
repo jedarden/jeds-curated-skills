@@ -834,6 +834,8 @@ test_review_timer_contracts() {
   assert_review_timer_rc 0 "passing memory check succeeds"
   assert_review_timer_output_has "passing check reports nothing to file" \
     'memory-tool check passed; nothing to file.'
+  assert_review_timer_output_has "passing check reports no bead needed" \
+    'No bead needed.'
   assert_review_timer_output_not_has "passing check suppresses diagnostics" \
     'fixture-secret'
   expect_ok "passing check runs in the configured home workspace" \
@@ -879,6 +881,8 @@ test_review_timer_contracts() {
     'Filed memory-tool check failure bead fixture-memory-failure in '
   expect_ok "legacy filing uses the legacy type flag" \
     grep -qF -- '--type task' "$REVIEW_TIMER_BF_LOG"
+  expect_ok "legacy filing uses the legacy priority flag" \
+    grep -qF -- '--priority p3' "$REVIEW_TIMER_BF_LOG"
   expect_ok "legacy filing excludes diagnostics" \
     file_excludes 'fixture-secret' "$REVIEW_TIMER_BF_LOG"
   capture_review_timer_runner "$REVIEW_TIMER_LEGACY_WORKSPACE"
