@@ -372,6 +372,7 @@ REVIEW_TIMER_BEAD_LOG=""
 REVIEW_TIMER_BF_LOG=""
 REVIEW_TIMER_BEAD_ISSUE=""
 REVIEW_TIMER_BF_ISSUE=""
+REVIEW_TIMER_MEMORY_CWD_LOG=""
 REVIEW_TIMER_MODE="pass"
 REVIEW_TIMER_OUTPUT=""
 REVIEW_TIMER_RC=0
@@ -393,6 +394,7 @@ new_review_timer_fixture() {
   REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BASE/bf.log"
   REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BASE/bead-issue-count"
   REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BASE/bf-issue-count"
+  REVIEW_TIMER_MEMORY_CWD_LOG="$REVIEW_TIMER_BASE/memory-tool.cwd"
 
   mkdir -p "$REVIEW_TIMER_HOME/.local/bin" "$REVIEW_TIMER_SHIM" \
     "$REVIEW_TIMER_WORKSPACE/.beads" "$REVIEW_TIMER_LEGACY_WORKSPACE/.beads"
@@ -413,6 +415,7 @@ EOF
 
   cat >"$REVIEW_TIMER_HOME/.local/bin/memory-tool" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "${PWD:?}" >"${REVIEW_TIMER_MEMORY_CWD_LOG:?}"
 printf '%s\n' 'diagnostic token=fixture-secret' >&2
 if [[ "${REVIEW_TIMER_MODE:-pass}" == pass ]]; then
   exit 0
@@ -489,6 +492,7 @@ run_review_timer_runner() {
     REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BF_LOG" \
     REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BEAD_ISSUE" \
     REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BF_ISSUE" \
+    REVIEW_TIMER_MEMORY_CWD_LOG="$REVIEW_TIMER_MEMORY_CWD_LOG" \
     "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
 }
 
@@ -585,6 +589,8 @@ test_review_timer_contracts() {
     'memory-tool check passed; nothing to file.'
   assert_review_timer_output_not_has "passing check suppresses diagnostics" \
     'fixture-secret'
+  expect_ok "passing check runs in the configured home workspace" \
+    grep -qFx -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_MEMORY_CWD_LOG"
   expect_ok "passing check files no bead" \
     test ! -e "$REVIEW_TIMER_BEAD_ISSUE"
   expect_ok "passing check never invokes bead-rs" \
@@ -606,6 +612,10 @@ test_review_timer_contracts() {
     "$REVIEW_TIMER_BEAD_LOG"
   expect_ok "bead-rs filing excludes diagnostics" \
     file_excludes 'fixture-secret' "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "failure bead carries workspace and exit context" \
+    grep -qF -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "failure bead records the check exit context" \
+    grep -qF -- 'exit\ 23' "$REVIEW_TIMER_BEAD_LOG"
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 23 "repeated bead-rs failure preserves failure code"
   expect_ok "repeated bead-rs failure remains one issue" \

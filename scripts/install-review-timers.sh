@@ -320,7 +320,7 @@ fi
 # credential-bearing output into the systemd journal or the filed bead. The
 # exit code is the durable finding; diagnostic detail is intentionally omitted.
 check_rc=0
-if memory-tool check >/dev/null 2>&1; then
+if (cd "\$HOME_WORKSPACE" && memory-tool check) >/dev/null 2>&1; then
   check_rc=0
 else
   check_rc=\$?
@@ -335,7 +335,7 @@ echo "memory-tool check failed with exit \$check_rc; attempting to file one bead
 
 backend=""
 if [[ -f "\$HOME_WORKSPACE/.needle.yaml" ]]; then
-  backend="\$(awk '\$1 == "backend:" {print \$2; exit}' "\$HOME_WORKSPACE/.needle.yaml")"
+  backend="\$(awk '\$1 == "backend:" || \$1 == "bead_cli.backend:" {print \$2; exit}' "\$HOME_WORKSPACE/.needle.yaml")"
 fi
 
 if [[ ! -d "\$HOME_WORKSPACE/.beads" || -z "\$backend" ]]; then
@@ -364,15 +364,16 @@ if ! command -v "\$bead_cli" >/dev/null 2>&1; then
 fi
 
 title="memory-tool check failure"
-description="memory-tool check failed with exit \$check_rc; diagnostic output is intentionally omitted to avoid credential disclosure."
+description="memory-tool check failed in \$HOME_WORKSPACE with exit \$check_rc; diagnostic output is intentionally omitted to avoid credential disclosure."
 unique_ref="factory-review:memory-tool-check"
 create_rc=0
 if [[ "\$backend_kind" == "bf" ]]; then
   # Legacy bead-forge has no bead-rs --unique-ref flag. Its list operation is
   # the compatibility deduplication check; keep the query's output private as
   # well because backend renderers may include the full description.
-  if (cd "\$HOME_WORKSPACE" && "\$bead_cli" list --status open 2>/dev/null) \\
-      | grep -qF -- "\$title"; then
+  existing_beads=""
+  if existing_beads="\$(cd "\$HOME_WORKSPACE" && "\$bead_cli" list --status open 2>/dev/null)" \\
+      && grep -qF -- "\$title" <<<"\$existing_beads"; then
     echo "An open memory-tool check failure bead already exists; nothing new to file."
   elif (cd "\$HOME_WORKSPACE" && "\$bead_cli" create \\
       --title "\$title" \\
