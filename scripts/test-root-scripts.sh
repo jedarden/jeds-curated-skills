@@ -370,6 +370,7 @@ REVIEW_TIMER_LEGACY_WORKSPACE=""
 REVIEW_TIMER_SHIM=""
 REVIEW_TIMER_PATH=""
 REVIEW_TIMER_SYSTEMCTL_LOG=""
+REVIEW_TIMER_SYSTEMCTL_STATE=""
 REVIEW_TIMER_BEAD_LOG=""
 REVIEW_TIMER_BF_LOG=""
 REVIEW_TIMER_BEAD_ISSUE=""
@@ -397,6 +398,7 @@ new_review_timer_fixture() {
   REVIEW_TIMER_LEGACY_WORKSPACE="$REVIEW_TIMER_BASE/legacy-workspace"
   REVIEW_TIMER_SHIM="$REVIEW_TIMER_BASE/shim"
   REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_BASE/systemctl.log"
+  REVIEW_TIMER_SYSTEMCTL_STATE="$REVIEW_TIMER_BASE/systemctl-timers"
   REVIEW_TIMER_BEAD_LOG="$REVIEW_TIMER_BASE/bead.log"
   REVIEW_TIMER_BF_LOG="$REVIEW_TIMER_BASE/bf.log"
   REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BASE/bead-issue-count"
@@ -412,10 +414,26 @@ new_review_timer_fixture() {
   cat >"$REVIEW_TIMER_SHIM/systemctl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${REVIEW_TIMER_SYSTEMCTL_LOG:?}"
+
+# Model the two user-manager operations the installer relies on. Installation
+# records enabled timers, and list-timers exposes those same units so the
+# fixture can assert the user-facing visibility contract without touching the
+# real user manager.
+if [[ "${1:-}" == --user && "${2:-}" == list-timers ]]; then
+  while IFS= read -r timer; do
+    [[ -n "$timer" ]] || continue
+    printf 'fixture  %s\n' "$timer"
+  done <"${REVIEW_TIMER_SYSTEMCTL_STATE:?}"
+  exit 0
+fi
+if [[ "${1:-}" == --user && "${2:-}" == enable && "${3:-}" == --now ]]; then
+  printf '%s\n' "${@:4}" >"${REVIEW_TIMER_SYSTEMCTL_STATE:?}"
+fi
 exit 0
 EOF
   chmod +x "$REVIEW_TIMER_SHIM/systemctl"
   REVIEW_TIMER_PATH="$REVIEW_TIMER_SHIM:$PATH"
+  : >"$REVIEW_TIMER_SYSTEMCTL_STATE"
 
   printf 'bead_cli:\n  backend: bead-rs\n' >"$REVIEW_TIMER_WORKSPACE/.needle.yaml"
   printf '{}\n' >"$REVIEW_TIMER_WORKSPACE/.beads/config.json"
@@ -507,6 +525,7 @@ EOF
 run_review_timer_install() {
   env HOME="$REVIEW_TIMER_HOME" PATH="$REVIEW_TIMER_PATH" \
     REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    REVIEW_TIMER_SYSTEMCTL_STATE="$REVIEW_TIMER_SYSTEMCTL_STATE" \
     bash "$REVIEW_TIMER_INSTALL" "$@"
 }
 
@@ -515,7 +534,15 @@ run_review_timer_dry_run() {
   shift
   env HOME="$dry_home" PATH="$REVIEW_TIMER_PATH" \
     REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    REVIEW_TIMER_SYSTEMCTL_STATE="$REVIEW_TIMER_SYSTEMCTL_STATE" \
     bash "$REVIEW_TIMER_INSTALL" "$@"
+}
+
+run_review_timer_list_timers() {
+  env HOME="$REVIEW_TIMER_HOME" PATH="$REVIEW_TIMER_PATH" \
+    REVIEW_TIMER_SYSTEMCTL_LOG="$REVIEW_TIMER_SYSTEMCTL_LOG" \
+    REVIEW_TIMER_SYSTEMCTL_STATE="$REVIEW_TIMER_SYSTEMCTL_STATE" \
+    systemctl --user list-timers --all --no-legend
 }
 
 run_review_timer_runner() {
@@ -677,6 +704,20 @@ test_review_timer_contracts() {
   expect_ok "install enables every generated timer" grep -qF \
     -- '--user enable --now factory-review-plan-vs-built.timer factory-review-find-stubs.timer factory-review-repo-hygiene.timer factory-review-memory-tool.timer factory-review-installed-drift.timer' \
     "$REVIEW_TIMER_SYSTEMCTL_LOG"
+
+  # The installer promises that enabled timers are visible through the same
+  # systemctl --user surface operators use to inspect the schedule. The fake
+  # user manager exposes the timers it received from enable --now, so this is
+  # an end-to-end visibility assertion rather than only a log assertion.
+  local visible_timers
+  visible_timers="$(run_review_timer_list_timers)"
+  for unit in factory-review-plan-vs-built factory-review-find-stubs \
+    factory-review-repo-hygiene factory-review-memory-tool; do
+    expect_ok "$unit is visible through systemctl --user list-timers" \
+      grep -qF -- "$unit.timer" <<<"$visible_timers"
+  done
+  expect_ok "machine-local drift timer is visible through systemctl --user" \
+    grep -qF -- 'factory-review-installed-drift.timer' <<<"$visible_timers"
 
   expect_exit 0 "review-timer re-install exits 0" run_review_timer_install
   for unit in "${unit_names[@]}"; do
@@ -864,6 +905,41 @@ test_review_timer_contracts() {
   expect_ok "uninstall preserves the workspace list" test -f "$workspace_config"
   expect_ok "uninstall preserves a foreign unit" test -e "$foreign_unit"
   expect_ok "uninstall preserves a foreign runner" test -e "$foreign_runner"
+}
+
+# Probe the real user manager when the host provides one. This is read-only:
+# the isolated fixture above owns installation, while this check only confirms
+# that an already-installed configuration is visible to operators. A clean
+# host, a shell without a user bus, or a host without systemd records a skip
+# instead of turning an optional integration check into a suite failure.
+test_live_review_timer_visibility() {
+  echo ""
+  echo "=== live systemctl --user timer visibility (optional) ==="
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "SKIP: systemctl is unavailable; live timer visibility was not checked"
+    return
+  fi
+
+  local listing
+  if ! listing="$(systemctl --user list-timers --all --no-legend 2>/dev/null)"; then
+    echo "SKIP: systemctl --user user manager is unavailable; live timer visibility was not checked"
+    return
+  fi
+
+  local missing=() unit
+  for unit in factory-review-plan-vs-built factory-review-find-stubs \
+    factory-review-repo-hygiene factory-review-memory-tool; do
+    if ! grep -qF -- "$unit.timer" <<<"$listing"; then
+      missing+=("$unit.timer")
+    fi
+  done
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    log_pass "systemctl --user exposes all four workspace review timers"
+  else
+    echo "SKIP: systemctl --user is available, but the four workspace timers are not installed (${missing[*]})"
+  fi
 }
 
 # --- check-installed.sh exit codes -----------------------------------------
@@ -1318,6 +1394,7 @@ main() {
   test_install_contracts
   test_install_hooks_contracts
   test_review_timer_contracts
+  test_live_review_timer_visibility
   test_statusline_contracts
   test_push_ci_contracts
 

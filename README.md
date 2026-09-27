@@ -351,8 +351,9 @@ cd ~/jeds-curated-skills
 ```
 
 The installer manages four weekly workspace checks plus one machine-local drift check, all
-staggered across the week. Each row installs the named `.timer`, its paired `.service`, and a
-runner script under `~/.config/factory-review/`:
+staggered across the week. The first four timers read `workspaces.txt`; the fifth checks this
+checkout's installed-skill drift and does not use that list. Each row installs the named
+`.timer`, its paired `.service`, and a runner script under `~/.config/factory-review/`:
 
 | Timer | Service | Schedule | Action |
 |-------|---------|----------|--------|
@@ -364,13 +365,16 @@ runner script under `~/.config/factory-review/`:
 
 ### What gets installed
 
-The command must be run from the checkout whose skills and drift state should be reviewed. It
-requires a user systemd manager and these commands available to the installer or generated
-runners: `bash`, `systemctl`, `journalctl`, `claude`, `memory-tool`, and the bead CLI declared
-by each workspace (`bead` for bead-rs or `bf` for legacy bead-forge). The installer resolves
-`bash` with `command -v` and embeds that path in the service units, which also avoids assuming
-that `/bin/bash` exists. Each runner prepends `$HOME/.local/bin:$HOME/.cargo/bin` to `PATH` so
-user-installed `claude`, `memory-tool`, and bead CLIs are found under systemd.
+The command must be run from the checkout whose skills and drift state should be reviewed. The
+installer itself needs `bash`; activating and inspecting the schedule needs a systemd user
+manager with `systemctl --user` and `journalctl --user`. The generated runners additionally
+need `claude` for the three workspace reviews, `memory-tool` for its host check, and the bead
+CLI declared by each workspace (`bead` for bead-rs or `bf` for legacy bead-forge). If no user
+manager is available, installation still writes the generated files and prints a warning; use
+the activation commands below later from a login session with a user bus. The installer
+resolves `bash` with `command -v` and embeds that path in the service units, which avoids
+assuming that `/bin/bash` exists. Each runner prepends `$HOME/.local/bin:$HOME/.cargo/bin` to
+`PATH` so user-installed commands are found under systemd.
 
 The generated files are:
 
@@ -506,8 +510,11 @@ left alone.
 
 The complete timer lifecycle is covered by `scripts/test-root-scripts.sh` (run it with
 `bash scripts/test-root-scripts.sh`, expecting exit 0). It uses a temporary `HOME`, fake
-`systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs, so it never touches the
-real user manager, workspace list, or bead store. The fixture checks every generated service,
+`systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs, so the fixture never
+touches the real user manager, workspace list, or bead store. It checks the four workspace
+timers through a fake `systemctl --user list-timers` response and also performs a read-only live
+probe when the host's user manager is available. A host without systemd or a user bus records
+`SKIP` and remains green. The fixture checks every generated service,
 timer, and runner (the four workspace review timers plus the installed-drift timer), including
 oneshot/timeout/Nice/PATH/journal properties, staggered calendars, persistent activation, and
 manual service execution. It also checks that repeated install is byte-identical, `--dry-run`
@@ -517,8 +524,10 @@ findings carry captured output into beads through both backends, failed Claude c
 their nonzero status, an empty workspace list reports `No configured workspaces; nothing to file.`,
 a passing memory check files no bead, and failing bead-rs/legacy checks preserve their exit code
 while filing one deduplicated bead without exposing diagnostics. Finally, `--uninstall` removes every
-installer-owned artifact while preserving the workspace list and foreign files. Keep these
-expectations in sync with this operator documentation when the timer contract changes.
+installer-owned artifact while preserving the workspace list and foreign files. `scripts/lint-shell.sh`
+also exits successfully with an explicit skip message when ShellCheck is unavailable; structural
+`bash -n` validation still runs. Keep these expectations in sync with this operator documentation
+when the timer contract changes.
 
 ## Philosophy
 
