@@ -29,8 +29,20 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 WORKSPACES_CONFIG="${FACTORY_REVIEW_WORKSPACES_FILE:-$HOME/.config/factory-review/workspaces.txt}"
 
 # The skill reports findings only. The runner owns the output boundary and
-# files the captured report in the reviewed workspace when it is actionable.
+# files the captured findings in the reviewed workspace when they are
+# actionable. A finding starts with FACTORY_REVIEW_FINDING and continues until
+# the next finding marker or the result marker. Older reports without markers
+# are treated as one finding so filing remains backwards-compatible.
 REVIEW_PROTOCOL='After completing the requested review, end your response with exactly one line: FACTORY_REVIEW_RESULT: clean when there are no actionable findings, or FACTORY_REVIEW_RESULT: findings when there are actionable findings. Do not create beads; the timer runner files the captured report.'
+
+# When the result is findings, emit each actionable finding as its own block:
+#
+#   FACTORY_REVIEW_FINDING: <stable short title>
+#   <evidence and proposed fix>
+#
+# Do not emit this marker for clean reviews. The marker title is deliberately
+# short and stable because legacy bf uses the resulting bead title for lookup.
+REVIEW_PROTOCOL+=$'\nWhen there are actionable findings, begin each finding block with exactly one line of the form FACTORY_REVIEW_FINDING: <stable short title>, put the finding evidence and suggested fix on following lines, and emit one block per finding before the final result line.'
 
 review_is_clean() {
   local report_file="$1"
@@ -60,32 +72,91 @@ review_is_clean() {
 
 review_backend() {
   local workspace="$1"
-  local backend=""
+  local configured_backend=""
 
-  [[ -d "$workspace/.beads" && -f "$workspace/.needle.yaml" ]] || {
-    echo none
+  REVIEW_BACKEND=none
+  REVIEW_BACKEND_ERROR=""
+  if [[ ! -d "$workspace/.beads" ]]; then
+    REVIEW_BACKEND_ERROR="no bead store at $workspace/.beads"
     return
-  }
+  fi
 
-  backend="$(awk '$1 == "backend:" || $1 == "bead_cli.backend:" {print $2; exit}' "$workspace/.needle.yaml")"
-  case "$backend" in
-    bead-rs|bead) echo bead-rs ;;
-    bf|bead-forge) echo bf ;;
-    *) echo none ;;
+  if [[ -f "$workspace/.needle.yaml" ]]; then
+    configured_backend="$(awk '$1 == "backend:" || $1 == "bead_cli.backend:" {print $2; exit}' \
+      "$workspace/.needle.yaml" | tr -d "\"'")"
+    if [[ -z "$configured_backend" ]]; then
+      REVIEW_BACKEND_ERROR="no bead backend configured in $workspace/.needle.yaml"
+      return
+    fi
+  else
+    # Older workspaces predate .needle.yaml. Their store config is a safe,
+    # local compatibility signal and avoids requiring a direct .beads write.
+    if [[ -f "$workspace/.beads/config.json" ]]; then
+      configured_backend=bead-rs
+    elif [[ -f "$workspace/.beads/config.yaml" ]]; then
+      configured_backend=bf
+    else
+      REVIEW_BACKEND_ERROR="no bead backend configuration in $workspace"
+      return
+    fi
+  fi
+
+  case "$configured_backend" in
+    bead-rs|bead) REVIEW_BACKEND=bead-rs ;;
+    bf|bead-forge) REVIEW_BACKEND=bf ;;
+    *)
+      REVIEW_BACKEND_ERROR="unsupported bead backend '$configured_backend' in $workspace"
+      ;;
   esac
 }
 
-file_review_bead() {
-  local workspace="$1"
-  local report_file="$2"
-  local backend bead_cli title description report_hash workspace_hash unique_ref
-  local backend_output rc=0
+FINDING_FILES=()
+FINDING_TITLES=()
 
-  backend="$(review_backend "$workspace")"
-  if [[ "$backend" == none ]]; then
-    echo "Review findings in $workspace could not be filed: no supported bead backend/store." >&2
-    return 1
+extract_review_findings() {
+  local report_file="$1"
+  local findings_dir="$2"
+  local line title current_file="" marker_count=0
+  FINDING_FILES=()
+  FINDING_TITLES=()
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^FACTORY_REVIEW_FINDING:[[:space:]]*(.*)$ ]]; then
+      title="${BASH_REMATCH[1]}"
+      marker_count=$((marker_count + 1))
+      current_file="$findings_dir/finding-$(printf '%04d' "$marker_count").md"
+      FINDING_FILES+=("$current_file")
+      if [[ -n "$title" ]]; then
+        FINDING_TITLES+=("$title")
+      else
+        FINDING_TITLES+=("Review finding $marker_count")
+      fi
+      printf '%s\n' "$line" >"$current_file"
+    elif [[ "$line" =~ ^FACTORY_REVIEW_RESULT: ]]; then
+      # The result is a protocol boundary, not finding content.
+      current_file=""
+    elif [[ -n "$current_file" ]]; then
+      printf '%s\n' "$line" >>"$current_file"
+    fi
+  done <"$report_file"
+
+  if [[ "$marker_count" -eq 0 ]]; then
+    # Installed or hand-authored reports from before the marker protocol are
+    # still actionable. Their complete report is one deduplicated finding.
+    current_file="$findings_dir/finding-0001.md"
+    cp "$report_file" "$current_file"
+    FINDING_FILES=("$current_file")
+    FINDING_TITLES=("Review findings")
   fi
+}
+
+file_one_review_bead() {
+  local workspace="$1"
+  local finding_file="$2"
+  local finding_title="$3"
+  local backend="$4"
+  local bead_cli title description finding_hash workspace_hash unique_ref
+  local backend_output rc=0
 
   if [[ "$backend" == bead-rs ]]; then
     bead_cli=bead
@@ -97,11 +168,13 @@ file_review_bead() {
     return 1
   fi
 
-  report_hash="$(sha256sum "$report_file" | awk '{print substr($1,1,16)}')"
+  # The marker title is the finding's stable identity. Evidence can gain a
+  # line number or timestamp on a later review without creating a duplicate.
+  finding_hash="$(printf '%s' "$finding_title" | sha256sum | awk '{print substr($1,1,16)}')"
   workspace_hash="$(printf '%s' "$workspace" | sha256sum | awk '{print substr($1,1,16)}')"
-  unique_ref="factory-review:${SKILL_NAME}:${workspace_hash}:${report_hash}"
-  title="Factory review: ${SKILL_NAME} findings in ${workspace}"
-  description="$(printf 'Factory review %s reported findings in %s.\n\nCaptured claude --print output:\n' "$SKILL_NAME" "$workspace"; cat "$report_file")"
+  unique_ref="factory-review:${SKILL_NAME}:${workspace_hash}:${finding_hash}"
+  title="Factory review: ${SKILL_NAME}: ${finding_title} in ${workspace}"
+  description="$(printf 'Factory review %s reported this finding in %s.\n\n' "$SKILL_NAME" "$workspace"; cat "$finding_file")"
 
   if ! backend_output="$(mktemp "${TMPDIR:-/tmp}/factory-review-bead.XXXXXX")"; then
     echo "Review findings in $workspace could not be filed: unable to capture backend result." >&2
@@ -118,7 +191,7 @@ file_review_bead() {
     fi
     if grep -qF -- "$title" "$backend_output"; then
       rm -f "$backend_output"
-      echo "Review findings already filed in $workspace; nothing new to file."
+      echo "Review finding already filed in $workspace: $finding_title"
       return 0
     fi
     if (cd "$workspace" && "$bead_cli" create \
@@ -129,7 +202,7 @@ file_review_bead() {
         --label factory-review \
         --label "$SKILL_NAME" >"$backend_output" 2>/dev/null); then
       rm -f "$backend_output"
-      echo "Filed review findings bead in $workspace."
+      echo "Filed review finding in $workspace: $finding_title"
       return 0
     else
       rc=$?
@@ -145,10 +218,10 @@ file_review_bead() {
         --unique-ref "$unique_ref" >"$backend_output" 2>/dev/null); then
       if grep -qE '^EXISTING([[:space:]]|$)' "$backend_output"; then
         rm -f "$backend_output"
-        echo "Review findings already filed in $workspace; nothing new to file."
+        echo "Review finding already filed in $workspace: $finding_title"
       else
         rm -f "$backend_output"
-        echo "Filed review findings bead in $workspace."
+        echo "Filed review finding in $workspace: $finding_title"
       fi
       return 0
     else
@@ -157,8 +230,38 @@ file_review_bead() {
   fi
 
   rm -f "$backend_output"
-  echo "Review findings in $workspace could not be filed (backend exit $rc)." >&2
+  echo "Review finding in $workspace could not be filed (backend exit $rc): $finding_title" >&2
   return 1
+}
+
+file_review_beads() {
+  local workspace="$1"
+  local report_file="$2"
+  local findings_dir="$3"
+  local backend finding_index filed=0 failed=0
+
+  review_backend "$workspace"
+  backend="$REVIEW_BACKEND"
+  if [[ "$backend" == none ]]; then
+    echo "Review findings in $workspace could not be filed: ${REVIEW_BACKEND_ERROR:-no supported bead backend/store}." >&2
+    return 1
+  fi
+
+  extract_review_findings "$report_file" "$findings_dir"
+  for finding_index in "${!FINDING_FILES[@]}"; do
+    if file_one_review_bead "$workspace" "${FINDING_FILES[$finding_index]}" \
+      "${FINDING_TITLES[$finding_index]}" "$backend"; then
+      filed=$((filed + 1))
+    else
+      failed=1
+    fi
+  done
+
+  if [[ "$failed" -ne 0 ]]; then
+    return 1
+  fi
+  echo "Filed or confirmed $filed review finding(s) in $workspace."
+  return 0
 }
 
 # A missing list is equivalent to an empty list. This lets an unconfigured
@@ -241,12 +344,20 @@ while IFS= read -r workspace || [[ -n "$workspace" ]]; do
   # actionable, passed to the configured bead backend.
   cat "$review_output"
 
+  finding_dir="$(mktemp -d "${TMPDIR:-/tmp}/factory-review-findings.XXXXXX")" || {
+    echo "Unable to create a finding directory for $workspace" >&2
+    [[ $failed -eq 0 ]] && failed=1
+    rm -f "$review_output"
+    continue
+  }
+
   if review_is_clean "$review_output"; then
     echo "${SKILL_NAME} clean in $workspace; nothing to file."
-  elif ! file_review_bead "$workspace" "$review_output"; then
+  elif ! file_review_beads "$workspace" "$review_output" "$finding_dir"; then
     [[ $failed -eq 0 ]] && failed=1
   fi
   rm -f "$review_output"
+  rm -rf "$finding_dir"
 done < "$WORKSPACES_CONFIG"
 
 if [[ $processed -eq 0 ]]; then

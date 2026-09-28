@@ -12,6 +12,7 @@ HOME_DIR="$BASE/home"
 BIN_DIR="$HOME_DIR/.local/bin"
 FIRST_WORKSPACE="$HOME_DIR/work one"
 SECOND_WORKSPACE="$HOME_DIR/work-two"
+LEGACY_WORKSPACE="$HOME_DIR/work-legacy"
 UNSUPPORTED_WORKSPACE="$HOME_DIR/work-unsupported"
 NON_DIRECTORY_ENTRY="$HOME_DIR/not-a-directory"
 UNSUPPORTED_HOME_ENTRY="~otheruser/workspace"
@@ -21,14 +22,21 @@ CONFIG="$HOME_DIR/.config/factory-review/workspaces.txt"
 CLAUDE_LOG="$BASE/claude.log"
 CLAUDE_ARGS_LOG="$BASE/claude-args.log"
 BEAD_LOG="$BASE/bead.log"
+BEAD_CREATED="$BASE/bead-created.log"
+BEAD_SEEN="$BASE/bead-seen.log"
+BF_LOG="$BASE/bf.log"
+BF_CREATED="$BASE/bf-created.log"
 
 mkdir -p "$BIN_DIR" "$FIRST_WORKSPACE/.beads" "$SECOND_WORKSPACE/.beads" \
+  "$LEGACY_WORKSPACE/.beads" \
   "$UNSUPPORTED_WORKSPACE/.beads" \
   "$(dirname "$CONFIG")"
 printf '%s\n' fixture >"$NON_DIRECTORY_ENTRY"
 mkdir -p "$LITERAL_SHELL_PATH"
 printf 'bead_cli:\n  backend: bead-rs\n' >"$FIRST_WORKSPACE/.needle.yaml"
 printf 'bead_cli:\n  backend: bead-rs\n' >"$SECOND_WORKSPACE/.needle.yaml"
+printf 'bead_cli:\n  backend: bf\n' >"$LEGACY_WORKSPACE/.needle.yaml"
+printf 'backend: bf\n' >"$LEGACY_WORKSPACE/.beads/config.yaml"
 printf 'bead_cli:\n  backend: unsupported-fixture\n' >"$UNSUPPORTED_WORKSPACE/.needle.yaml"
 
 cat >"$BIN_DIR/claude" <<'EOF'
@@ -38,7 +46,12 @@ printf '%s\n' "${PWD:?}" >>"${REVIEW_RUNNER_CLAUDE_LOG:?}"
 printf '%q ' "$@" >>"${REVIEW_RUNNER_CLAUDE_ARGS_LOG:?}"
 printf '\n' >>"${REVIEW_RUNNER_CLAUDE_ARGS_LOG:?}"
 if [[ "${REVIEW_RUNNER_CLAUDE_MODE:-clean}" == findings ]]; then
-  printf '%s\n' 'fixture finding' 'FACTORY_REVIEW_RESULT: findings'
+  printf '%s\n' \
+    'FACTORY_REVIEW_FINDING: first fixture finding' \
+    'first finding evidence' \
+    'FACTORY_REVIEW_FINDING: second fixture finding' \
+    'second finding evidence' \
+    'FACTORY_REVIEW_RESULT: findings'
 else
   printf '%s\n' 'fixture clean' 'FACTORY_REVIEW_RESULT: clean'
 fi
@@ -51,9 +64,51 @@ set -u
 printf 'cwd=%q ' "${PWD:?}" >>"${REVIEW_RUNNER_BEAD_LOG:?}"
 printf '%q ' "$@" >>"${REVIEW_RUNNER_BEAD_LOG:?}"
 printf '\n' >>"${REVIEW_RUNNER_BEAD_LOG:?}"
+unique_ref=""
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == --unique-ref ]]; then
+    unique_ref="$arg"
+    break
+  fi
+  previous="$arg"
+done
+if grep -qF -- "$unique_ref" "${REVIEW_RUNNER_BEAD_SEEN:?}" 2>/dev/null; then
+  printf '%s\n' "EXISTING fixture-bead"
+  exit 0
+fi
+printf '%s\n' "$unique_ref" >>"${REVIEW_RUNNER_BEAD_SEEN:?}"
+printf '%s\n' fixture-bead >>"${REVIEW_RUNNER_BEAD_CREATED:?}"
 printf '%s\n' fixture-bead
 EOF
 chmod +x "$BIN_DIR/bead"
+
+cat >"$BIN_DIR/bf" <<'EOF'
+#!/usr/bin/env bash
+set -u
+printf 'cwd=%q ' "${PWD:?}" >>"${REVIEW_RUNNER_BF_LOG:?}"
+printf '%q ' "$@" >>"${REVIEW_RUNNER_BF_LOG:?}"
+printf '\n' >>"${REVIEW_RUNNER_BF_LOG:?}"
+if [[ "${1:-}" == list ]]; then
+  cat "${REVIEW_RUNNER_BF_CREATED:?}" 2>/dev/null || true
+  exit 0
+fi
+title=""
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == --title ]]; then
+    title="$arg"
+    break
+  fi
+  previous="$arg"
+done
+if ! grep -qF -- "$title" "${REVIEW_RUNNER_BF_CREATED:?}" 2>/dev/null; then
+  printf '%s\n' "$title" >>"${REVIEW_RUNNER_BF_CREATED:?}"
+  printf '%s\n' fixture-bf >>"${REVIEW_RUNNER_BF_CREATED:?}.ids"
+fi
+printf '%s\n' fixture-bf
+EOF
+chmod +x "$BIN_DIR/bf"
 
 run_child() {
   local mode="$1"
@@ -63,6 +118,10 @@ run_child() {
     REVIEW_RUNNER_CLAUDE_LOG="$CLAUDE_LOG" \
     REVIEW_RUNNER_CLAUDE_ARGS_LOG="$CLAUDE_ARGS_LOG" \
     REVIEW_RUNNER_BEAD_LOG="$BEAD_LOG" \
+    REVIEW_RUNNER_BEAD_CREATED="$BEAD_CREATED" \
+    REVIEW_RUNNER_BEAD_SEEN="$BEAD_SEEN" \
+    REVIEW_RUNNER_BF_LOG="$BF_LOG" \
+    REVIEW_RUNNER_BF_CREATED="$BF_CREATED" \
     bash "$RUNNER" "$skill"
 }
 
@@ -81,6 +140,10 @@ assert_count() {
 printf '\n   \n# ignored\n%s\n%s\n' "$FIRST_WORKSPACE" "$SECOND_WORKSPACE" >"$CONFIG"
 : >"$CLAUDE_LOG"
 : >"$CLAUDE_ARGS_LOG"
+: >"$BEAD_SEEN"
+: >"$BEAD_CREATED"
+: >"$BF_CREATED"
+rm -f "$BF_CREATED.ids"
 for skill in plan-vs-built find-stubs repo-hygiene; do
   output="$(run_child clean "$skill")"
   assert_has "$skill clean in $FIRST_WORKSPACE; nothing to file." <(printf '%s\n' "$output")
@@ -109,22 +172,36 @@ assert_has "repo-hygiene clean in $LITERAL_SHELL_PATH; nothing to file." \
 
 # Findings are filed through the target workspace's backend and still use the
 # selected skill; this also proves bead execution occurs in that workspace.
-printf '%s\n%s\n' "$FIRST_WORKSPACE" "$SECOND_WORKSPACE" >"$CONFIG"
+printf '%s\n%s\n' "$FIRST_WORKSPACE" "$LEGACY_WORKSPACE" >"$CONFIG"
+: >"$BEAD_LOG"
+: >"$BF_LOG"
+: >"$BEAD_CREATED"
+: >"$BF_CREATED"
 output="$(run_child findings find-stubs)"
-assert_has 'Filed review findings bead' <(printf '%s\n' "$output")
-assert_count 2 "$BEAD_LOG"
+assert_has 'Filed review finding' <(printf '%s\n' "$output")
+assert_count 2 "$BEAD_CREATED"
+assert_count 2 "$BF_CREATED.ids"
 assert_has "$FIRST_WORKSPACE" "$BEAD_LOG"
-assert_has "$SECOND_WORKSPACE" "$BEAD_LOG"
-assert_has 'fixture finding' "$BEAD_LOG"
+assert_has "$LEGACY_WORKSPACE" "$BF_LOG"
+assert_has 'first fixture finding' "$BEAD_LOG"
+assert_has 'second fixture finding' "$BF_LOG"
+
+# A repeat report creates no new issues: bead-rs uses its stable unique ref,
+# while legacy bf uses an open-title lookup for each individual finding.
+output="$(run_child findings find-stubs)"
+assert_has 'Review finding already filed' <(printf '%s\n' "$output")
+assert_count 2 "$BEAD_CREATED"
+assert_count 2 "$BF_CREATED.ids"
 
 # Findings in a workspace whose declared backend is unsupported are reported
 # as a filing failure without invoking a bead CLI or exposing tool output.
 printf '%s\n' "$UNSUPPORTED_WORKSPACE" >"$CONFIG"
 : >"$BEAD_LOG"
+: >"$BEAD_CREATED"
 rc=0
 output="$(run_child findings find-stubs 2>&1)" || rc=$?
 [[ "$rc" -eq 1 ]]
-assert_has 'no supported bead backend/store' <(printf '%s\n' "$output")
+assert_has "unsupported bead backend 'unsupported-fixture'" <(printf '%s\n' "$output")
 [[ ! -s "$BEAD_LOG" ]]
 
 # An empty/whitespace-only list is a successful explicit no-op.

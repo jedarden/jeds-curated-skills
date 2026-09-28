@@ -550,7 +550,7 @@ if [[ "${1:-}" == list ]]; then
   if [[ -e "${REVIEW_TIMER_BF_ISSUE:?}" ]]; then
     printf '%s\n' 'memory-tool check failure'
     for skill in plan-vs-built find-stubs repo-hygiene; do
-      printf 'Factory review: %s findings in %s\n' "$skill" \
+      printf 'Factory review: %s: Review findings in %s\n' "$skill" \
         "${REVIEW_TIMER_LEGACY_WORKSPACE:?}"
     done
   fi
@@ -1033,7 +1033,7 @@ test_review_timer_contracts() {
     capture_review_timer_review_runner "$review_unit"
     assert_review_timer_rc 0 "finding $review_unit service succeeds"
     assert_review_timer_output_has "finding $review_unit files a bead" \
-      'Filed review findings bead'
+      'Filed review finding'
   done
   expect_ok "findings create one bead per review via bead-rs" test \
     "$(grep -c '^bead create ' "$REVIEW_TIMER_BEAD_LOG")" = 3
@@ -1046,7 +1046,7 @@ test_review_timer_contracts() {
   capture_review_timer_review_runner plan-vs-built
   assert_review_timer_rc 0 "repeated finding service remains successful"
   assert_review_timer_output_has "repeated finding is deduplicated" \
-    'Review findings already filed'
+    'Review finding already filed'
   expect_ok "repeated finding keeps one bead-rs issue" \
     test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
   expect_ok "repeated finding does not create another legacy issue" test \
