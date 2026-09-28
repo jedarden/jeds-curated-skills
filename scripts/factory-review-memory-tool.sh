@@ -17,11 +17,17 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-HOME_WORKSPACE="${FACTORY_REVIEW_HOME_WORKSPACE:-$HOME/jeds-curated-skills}"
+EXPLICIT_HOME_WORKSPACE="${FACTORY_REVIEW_HOME_WORKSPACE:-}"
+if [[ -n "$EXPLICIT_HOME_WORKSPACE" ]]; then
+  HOME_WORKSPACE="$EXPLICIT_HOME_WORKSPACE"
+else
+  HOME_WORKSPACE="$HOME/jeds-curated-skills"
+fi
 
 # When the installer was run from the home workspace itself, use that exact
 # checkout even if HOME has a different directory name in a fixture or clone.
-if [[ ! -f "$HOME_WORKSPACE/.needle.yaml" || ! -d "$HOME_WORKSPACE/.beads" ]]; then
+if [[ -z "$EXPLICIT_HOME_WORKSPACE" &&
+  ( ! -f "$HOME_WORKSPACE/.needle.yaml" || ! -d "$HOME_WORKSPACE/.beads" ) ]]; then
   if [[ -f "$INSTALL_REPO_ROOT/.needle.yaml" && -d "$INSTALL_REPO_ROOT/.beads" ]]; then
     HOME_WORKSPACE="$INSTALL_REPO_ROOT"
   fi
@@ -85,7 +91,7 @@ if ! command -v "$bead_cli" >/dev/null 2>&1; then
 fi
 
 title="memory-tool check failure"
-description="memory-tool check failed in $HOME_WORKSPACE with exit $check_rc; diagnostic output is intentionally omitted to avoid credential disclosure."
+description="memory-tool check failed in $HOME_WORKSPACE with exit $check_rc; command: memory-tool check; action: rerun memory-tool check in the selected workspace to investigate; diagnostic output is intentionally omitted to avoid credential disclosure."
 unique_ref="factory-review:memory-tool-check"
 create_rc=0
 bead_output="$(mktemp "${TMPDIR:-/tmp}/factory-review-memory-bead.XXXXXX")" || {

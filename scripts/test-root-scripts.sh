@@ -998,6 +998,8 @@ test_review_timer_contracts() {
     grep -qF -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_BEAD_LOG"
   expect_ok "failure bead records the check exit context" \
     grep -qF -- 'exit\ 23' "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "failure bead records the check command context" \
+    grep -qF -- 'command:\ memory-tool\ check' "$REVIEW_TIMER_BEAD_LOG"
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 23 "repeated bead-rs failure preserves failure code"
   assert_review_timer_output_has "repeated bead-rs failure identifies the existing bead" \
@@ -1024,6 +1026,40 @@ test_review_timer_contracts() {
     test "$(<"$REVIEW_TIMER_BF_ISSUE")" = 1
   expect_ok "legacy rerun does not create a second bead" \
     test "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG" || true)" = 1
+
+  # An explicitly selected home workspace must not silently fall back to the
+  # install checkout when its backend declaration is missing or unsupported.
+  # Both cases preserve the check failure and leave the backend stores alone.
+  local missing_backend_workspace="$REVIEW_TIMER_BASE/missing-backend-workspace"
+  mkdir -p "$missing_backend_workspace/.beads"
+  printf 'bead_cli:\n' >"$missing_backend_workspace/.needle.yaml"
+  rm -f "$REVIEW_TIMER_BEAD_LOG" "$REVIEW_TIMER_BEAD_ISSUE" \
+    "$REVIEW_TIMER_BF_LOG" "$REVIEW_TIMER_BF_ISSUE"
+  capture_review_timer_runner "$missing_backend_workspace"
+  assert_review_timer_rc 23 "missing backend preserves check failure code"
+  assert_review_timer_output_has "missing backend reports nothing to file" \
+    'home workspace has no bead store/backend'
+  expect_ok "missing backend does not file bead-rs issue" \
+    test ! -e "$REVIEW_TIMER_BEAD_ISSUE"
+  expect_ok "missing backend does not invoke bead-rs" \
+    test ! -e "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "missing backend check runs in the selected workspace" \
+    grep -qFx -- "$missing_backend_workspace" "$REVIEW_TIMER_MEMORY_CWD_LOG"
+
+  local unsupported_backend_workspace="$REVIEW_TIMER_BASE/unsupported-backend-workspace"
+  mkdir -p "$unsupported_backend_workspace/.beads"
+  printf 'bead_cli:\n  backend: unknown-backend\n' \
+    >"$unsupported_backend_workspace/.needle.yaml"
+  capture_review_timer_runner "$unsupported_backend_workspace"
+  assert_review_timer_rc 23 "unsupported backend preserves check failure code"
+  assert_review_timer_output_has "unsupported backend reports the configured value" \
+    "unsupported bead backend 'unknown-backend'"
+  expect_ok "unsupported backend still does not file bead-rs issue" \
+    test ! -e "$REVIEW_TIMER_BEAD_ISSUE"
+  expect_ok "unsupported backend still does not invoke bead-rs" \
+    test ! -e "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "unsupported backend check runs in the selected workspace" \
+    grep -qFx -- "$unsupported_backend_workspace" "$REVIEW_TIMER_MEMORY_CWD_LOG"
 
   # A legacy open-bead lookup failure must not fall through to create: without
   # a successful deduplication check, filing could create an unbounded stream
