@@ -842,7 +842,8 @@ test_review_timer_contracts() {
     assert_review_timer_field "$unit runner delegates to the workspace-review child" \
       'factory-review-workspace.sh' "$unit_runner"
     assert_review_timer_field "$unit runner extends the command PATH" \
-      'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"' "$unit_runner"
+      'export PATH="/run/current-system/sw/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"' \
+      "$unit_runner"
     if command -v systemd-analyze >/dev/null 2>&1; then
       expect_ok "$unit timer has a valid weekly calendar" \
         systemd-analyze calendar "${schedules[$i]}"
@@ -977,6 +978,34 @@ test_review_timer_contracts() {
   expect_ok "review-timer dry-run does not mutate systemctl log" \
     cmp -s "$dry_systemctl_log" "$REVIEW_TIMER_SYSTEMCTL_LOG"
   expect_ok "review-timer dry-run does not mutate systemctl state" \
+    cmp -s "$dry_systemctl_state" "$REVIEW_TIMER_SYSTEMCTL_STATE"
+
+  # A configured dry-run prints one concrete Claude command per non-comment,
+  # non-blank entry for each of the three workspace-list skills. The fixture
+  # paths need not be real: previewing commands must not enter or mutate them.
+  local command_dry_home="$REVIEW_TIMER_BASE/command-dry-home"
+  local command_dry_config="$command_dry_home/.config/factory-review/workspaces.txt"
+  mkdir -p "$(dirname "$command_dry_config")"
+  printf '%s\n\n  # ignored\n%s\n' \
+    "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_LEGACY_WORKSPACE" \
+    >"$command_dry_config"
+  cp "$REVIEW_TIMER_SYSTEMCTL_LOG" "$dry_systemctl_log"
+  cp "$REVIEW_TIMER_SYSTEMCTL_STATE" "$dry_systemctl_state"
+  capture_review_timer_dry_run "$command_dry_home"
+  assert_review_timer_dry_rc 0 "configured review command dry-run exits 0"
+  for i in "${!workspace_skills[@]}"; do
+    expect_ok "dry-run prints first ${workspace_skills[$i]} command" grep -qF \
+      "(cd -- $REVIEW_TIMER_WORKSPACE && claude --print /${workspace_skills[$i]} .)" \
+      <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints second ${workspace_skills[$i]} command" grep -qF \
+      "(cd -- $REVIEW_TIMER_LEGACY_WORKSPACE && claude --print /${workspace_skills[$i]} .)" \
+      <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  done
+  expect_ok "configured dry-run does not create unit files" \
+    test ! -e "$command_dry_home/.config/systemd"
+  expect_ok "configured dry-run does not mutate systemctl log" \
+    cmp -s "$dry_systemctl_log" "$REVIEW_TIMER_SYSTEMCTL_LOG"
+  expect_ok "configured dry-run does not mutate systemctl state" \
     cmp -s "$dry_systemctl_state" "$REVIEW_TIMER_SYSTEMCTL_STATE"
 
   local no_systemctl_output no_systemctl_rc=0

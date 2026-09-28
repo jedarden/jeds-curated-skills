@@ -206,6 +206,47 @@ WantedBy=timers.target
 EOF
 }
 
+# Print the concrete commands that a workspace-review runner will execute.
+# This is deliberately a preview only: it reads the configured list but never
+# creates directories, changes units, invokes systemd, or files beads.
+print_workspace_review_commands() {
+  local skill_name="$1"
+  local workspace raw_workspace quoted_workspace
+
+  echo -e "${YELLOW}[DRY RUN] Workspace commands for ${skill_name}:${NC}"
+  if [[ ! -f "$WORKSPACES_CONFIG" ]]; then
+    echo "  (no configured workspaces: $WORKSPACES_CONFIG)"
+    return 0
+  fi
+  if [[ ! -r "$WORKSPACES_CONFIG" ]]; then
+    echo "  (workspace list is not readable: $WORKSPACES_CONFIG)"
+    return 0
+  fi
+
+  while IFS= read -r raw_workspace || [[ -n "$raw_workspace" ]]; do
+    # Match the child runner's list handling, including CRLF files. Do not
+    # evaluate entries as shell input: paths remain literal data.
+    raw_workspace="${raw_workspace%$'\r'}"
+    if [[ "$raw_workspace" =~ ^[[:space:]]*$ ||
+      "$raw_workspace" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+    if [[ "$raw_workspace" == "~"* && "$raw_workspace" != "~" &&
+      "$raw_workspace" != "~/"* ]]; then
+      echo "  (skipping malformed workspace entry: $raw_workspace)"
+      continue
+    fi
+
+    workspace="${raw_workspace/#\~/$HOME}"
+    if [[ "$workspace" != /* ]]; then
+      workspace="$HOME/$workspace"
+    fi
+    printf -v quoted_workspace '%q' "$workspace"
+    printf '  (cd -- %s && claude --print /%s .)\n' \
+      "$quoted_workspace" "$skill_name"
+  done < "$WORKSPACES_CONFIG"
+}
+
 # Generate the workspace-review service wrapper. The review loop itself lives
 # in scripts/factory-review-workspace.sh so it can be tested and run without
 # loading this installer's systemd lifecycle or host-check code.
@@ -223,8 +264,9 @@ set -uo pipefail
 
 # The child adds the user's local command directories as well. Keep this
 # wrapper small: the installer owns generated artifacts, while the child owns
-# workspace iteration and review reporting.
-export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
+# workspace iteration and review reporting. Include the Nix system path
+# explicitly so the generated command works when invoked outside systemd.
+export PATH="/run/current-system/sw/bin:\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
 
 # REPO_ROOT is baked in when the service is installed, so the timer can
 # invoke the tested child even when systemd starts with WorkingDirectory=%h.
@@ -521,6 +563,11 @@ install_unit() {
       generate_drift_runner_script "$unit_name"
     else
       generate_runner_script "$unit_name" "$skill_name"
+    fi
+    if [[ "$skill_name" == "plan-vs-built" ||
+      "$skill_name" == "find-stubs" ||
+      "$skill_name" == "repo-hygiene" ]]; then
+      print_workspace_review_commands "$skill_name"
     fi
   else
     mkdir -p "$(dirname "$runner_script")"
