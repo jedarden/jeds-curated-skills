@@ -12,15 +12,18 @@ HOME_DIR="$BASE/home"
 BIN_DIR="$HOME_DIR/.local/bin"
 FIRST_WORKSPACE="$HOME_DIR/work one"
 SECOND_WORKSPACE="$HOME_DIR/work-two"
+UNSUPPORTED_WORKSPACE="$HOME_DIR/work-unsupported"
 CONFIG="$HOME_DIR/.config/factory-review/workspaces.txt"
 CLAUDE_LOG="$BASE/claude.log"
 CLAUDE_ARGS_LOG="$BASE/claude-args.log"
 BEAD_LOG="$BASE/bead.log"
 
 mkdir -p "$BIN_DIR" "$FIRST_WORKSPACE/.beads" "$SECOND_WORKSPACE/.beads" \
+  "$UNSUPPORTED_WORKSPACE/.beads" \
   "$(dirname "$CONFIG")"
 printf 'bead_cli:\n  backend: bead-rs\n' >"$FIRST_WORKSPACE/.needle.yaml"
 printf 'bead_cli:\n  backend: bead-rs\n' >"$SECOND_WORKSPACE/.needle.yaml"
+printf 'bead_cli:\n  backend: unsupported-fixture\n' >"$UNSUPPORTED_WORKSPACE/.needle.yaml"
 
 cat >"$BIN_DIR/claude" <<'EOF'
 #!/usr/bin/env bash
@@ -90,6 +93,17 @@ assert_has 'Filed review findings bead' <(printf '%s\n' "$output")
 assert_count 2 "$BEAD_LOG"
 assert_has "$FIRST_WORKSPACE" "$BEAD_LOG"
 assert_has "$SECOND_WORKSPACE" "$BEAD_LOG"
+assert_has 'fixture finding' "$BEAD_LOG"
+
+# Findings in a workspace whose declared backend is unsupported are reported
+# as a filing failure without invoking a bead CLI or exposing tool output.
+printf '%s\n' "$UNSUPPORTED_WORKSPACE" >"$CONFIG"
+: >"$BEAD_LOG"
+rc=0
+output="$(run_child findings find-stubs 2>&1)" || rc=$?
+[[ "$rc" -eq 1 ]]
+assert_has 'no supported bead backend/store' <(printf '%s\n' "$output")
+[[ ! -s "$BEAD_LOG" ]]
 
 # An empty/whitespace-only list is a successful explicit no-op.
 printf '\n  # no workspaces\n\t\n' >"$CONFIG"

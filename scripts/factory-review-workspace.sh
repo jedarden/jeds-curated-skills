@@ -79,7 +79,7 @@ file_review_bead() {
   local workspace="$1"
   local report_file="$2"
   local backend bead_cli title description report_hash workspace_hash unique_ref
-  local result rc=0 existing
+  local backend_output rc=0
 
   backend="$(review_backend "$workspace")"
   if [[ "$backend" == none ]]; then
@@ -103,42 +103,52 @@ file_review_bead() {
   title="Factory review: ${SKILL_NAME} findings in ${workspace}"
   description="$(printf 'Factory review %s reported findings in %s.\n\nCaptured claude --print output:\n' "$SKILL_NAME" "$workspace"; cat "$report_file")"
 
+  if ! backend_output="$(mktemp "${TMPDIR:-/tmp}/factory-review-bead.XXXXXX")"; then
+    echo "Review findings in $workspace could not be filed: unable to capture backend result." >&2
+    return 1
+  fi
+
   if [[ "$backend" == bf ]]; then
     # Legacy bf has no --unique-ref flag. An open-title lookup is the
     # compatibility deduplication path used by its installed skill contract.
-    if ! existing="$(cd "$workspace" && "$bead_cli" list --status open 2>/dev/null)"; then
+    if ! (cd "$workspace" && "$bead_cli" list --status open >"$backend_output" 2>/dev/null); then
+      rm -f "$backend_output"
       echo "Review findings in $workspace could not be filed: '$bead_cli list' failed." >&2
       return 1
     fi
-    if grep -qF -- "$title" <<<"$existing"; then
+    if grep -qF -- "$title" "$backend_output"; then
+      rm -f "$backend_output"
       echo "Review findings already filed in $workspace; nothing new to file."
       return 0
     fi
-    if result="$(cd "$workspace" && "$bead_cli" create \
+    if (cd "$workspace" && "$bead_cli" create \
         --title "$title" \
         --description "$description" \
         --priority p3 \
         --type task \
         --label factory-review \
-        --label "$SKILL_NAME" 2>&1)"; then
-      echo "Filed review findings bead in $workspace: $result"
+        --label "$SKILL_NAME" >"$backend_output" 2>/dev/null); then
+      rm -f "$backend_output"
+      echo "Filed review findings bead in $workspace."
       return 0
     else
       rc=$?
     fi
   else
-    if result="$(cd "$workspace" && "$bead_cli" create \
+    if (cd "$workspace" && "$bead_cli" create \
         --title "$title" \
         --description "$description" \
         --priority 3 \
         --issue-type task \
         --label factory-review \
         --label "$SKILL_NAME" \
-        --unique-ref "$unique_ref" 2>&1)"; then
-      if [[ "$result" == EXISTING* ]]; then
+        --unique-ref "$unique_ref" >"$backend_output" 2>/dev/null); then
+      if grep -qE '^EXISTING([[:space:]]|$)' "$backend_output"; then
+        rm -f "$backend_output"
         echo "Review findings already filed in $workspace; nothing new to file."
       else
-        echo "Filed review findings bead in $workspace: $result"
+        rm -f "$backend_output"
+        echo "Filed review findings bead in $workspace."
       fi
       return 0
     else
@@ -146,7 +156,8 @@ file_review_bead() {
     fi
   fi
 
-  echo "Review findings in $workspace could not be filed (backend exit $rc): $result" >&2
+  rm -f "$backend_output"
+  echo "Review findings in $workspace could not be filed (backend exit $rc)." >&2
   return 1
 }
 
@@ -155,6 +166,11 @@ file_review_bead() {
 if [[ ! -f "$WORKSPACES_CONFIG" ]]; then
   echo "No configured workspaces; nothing to file."
   exit 0
+fi
+
+if [[ ! -r "$WORKSPACES_CONFIG" ]]; then
+  echo "Configured workspace list could not be read; review skipped." >&2
+  exit 1
 fi
 
 processed=0
@@ -189,20 +205,25 @@ while IFS= read -r workspace || [[ -n "$workspace" ]]; do
   # Run in a subshell so every invocation has the target checkout as PWD and
   # the next configured workspace cannot inherit the previous directory.
   claude_rc=0
-  if (cd "$workspace" && claude --append-system-prompt "$REVIEW_PROTOCOL" --print /${SKILL_NAME} . \
-      >"$review_output" 2>&1); then
+  if (cd "$workspace" && claude --append-system-prompt "$REVIEW_PROTOCOL" --print /${SKILL_NAME} .) \
+      >"$review_output" 2>&1; then
     :
   else
     claude_rc=$?
   fi
-  cat "$review_output"
 
   if [[ $claude_rc -ne 0 ]]; then
+    # Do not replay a failed tool's output. It may contain credentials or
+    # backend diagnostics that do not belong in the service journal.
     echo "${SKILL_NAME} failed in $workspace (claude exit $claude_rc)" >&2
     [[ $failed -eq 0 ]] && failed=$claude_rc
     rm -f "$review_output"
     continue
   fi
+
+  # Successful review output is the report that is both journaled and, when
+  # actionable, passed to the configured bead backend.
+  cat "$review_output"
 
   if review_is_clean "$review_output"; then
     echo "${SKILL_NAME} clean in $workspace; nothing to file."
