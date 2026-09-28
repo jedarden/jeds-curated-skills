@@ -663,6 +663,18 @@ file_excludes() {
   [[ ! -e "$file" ]] || ! grep -qF -- "$needle" "$file"
 }
 
+test_workspace_review_child() {
+  echo "=== factory-review workspace child fixture ==="
+  local output rc=0
+  output="$(bash "$REPO_ROOT/scripts/test-review-runner.sh" 2>&1)" || rc=$?
+  if [[ "$rc" == 0 ]]; then
+    log_pass "workspace child fixture covers iteration, invocation, filing, and no-op lists"
+  else
+    log_fail "workspace child fixture failed (exit $rc)"
+    echo "$output" | sed 's/^/      /'
+  fi
+}
+
 test_review_timer_contracts() {
   echo ""
   echo "=== install-review-timers.sh lifecycle fixtures ==="
@@ -743,11 +755,10 @@ test_review_timer_contracts() {
     unit_runner="$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
     expect_ok "$unit service launches its generated runner" grep -qF \
       "$unit.sh" "$service"
-    expect_ok "$unit runner names its workspace skill" grep -qF \
-      "SKILL_NAME=\"${workspace_skills[$i]}\"" "$unit_runner"
-    expect_ok "$unit runner invokes claude --print" grep -qF \
-      'claude --append-system-prompt "$REVIEW_PROTOCOL" --print /${SKILL_NAME} .' \
-      "$unit_runner"
+    expect_ok "$unit runner passes its workspace skill" grep -qF \
+      "factory-review-workspace.sh\" \"${workspace_skills[$i]}" "$unit_runner"
+    expect_ok "$unit runner delegates to the workspace-review child" grep -qF \
+      'factory-review-workspace.sh' "$unit_runner"
     if command -v systemd-analyze >/dev/null 2>&1; then
       expect_ok "$unit timer has a valid weekly calendar" \
         systemd-analyze calendar "${schedules[$i]}"
@@ -820,10 +831,9 @@ test_review_timer_contracts() {
     expect_ok "dry-run prints $unit timer" grep -qF \
       "$unit.timer" <<<"$REVIEW_TIMER_DRY_OUTPUT"
     expect_ok "dry-run prints $unit skill command" grep -qF \
-      "SKILL_NAME=\"${workspace_skills[$i]}\"" <<<"$REVIEW_TIMER_DRY_OUTPUT"
-    expect_ok "dry-run prints the claude --print template" grep -qF \
-      'claude --append-system-prompt "$REVIEW_PROTOCOL" --print /${SKILL_NAME} .' \
-      <<<"$REVIEW_TIMER_DRY_OUTPUT"
+      "factory-review-workspace.sh\" \"${workspace_skills[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints the workspace-review child" grep -qF \
+      'factory-review-workspace.sh' <<<"$REVIEW_TIMER_DRY_OUTPUT"
     expect_ok "dry-run prints $unit weekly schedule" grep -qF \
       "OnCalendar=${schedules[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
   done
@@ -1595,6 +1605,7 @@ main() {
   test_stale_inline_contracts
   test_install_contracts
   test_install_hooks_contracts
+  test_workspace_review_child
   test_review_timer_contracts
   test_live_review_timer_visibility
   test_statusline_contracts

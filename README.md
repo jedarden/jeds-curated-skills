@@ -396,6 +396,11 @@ user manager returns. Installation runs `systemctl --user daemon-reload` and
 is not available, the generated files remain installed and the script prints the command to
 activate them later.
 
+The three workspace-review service files are thin wrappers around the checked-in
+`scripts/factory-review-workspace.sh` child. That child owns workspace iteration, the
+`claude --print` invocation, clean/no-op reporting, and findings filing; the installer keeps
+systemd lifecycle generation and the separate host checks in their own runners.
+
 The installer creates `~/.config/factory-review/workspaces.txt` with comments if it does not
 exist. Put one workspace path on each line; for example:
 
@@ -451,7 +456,7 @@ found, so it files one deduplicated bead in this checkout and leaves the service
 inspection. Exit 2 means a usage/environment problem such as a missing `~/.claude/skills/`
 directory; it files no bead because that is not drift.
 
-An empty workspace list has an intentional, explicit outcome: workspace runners print
+An empty or missing workspace list has an intentional, explicit outcome: workspace runners print
 `No configured workspaces; nothing to file.` and do not invent a finding. This does not disable
 the independent `memory-tool` or installed-drift checks.
 
@@ -514,6 +519,9 @@ left alone.
 
 ### Fixture verification
 
+The focused workspace child fixture is `scripts/test-review-runner.sh`; it uses a temporary
+`HOME` and fake `claude`/`bead` commands to prove workspace iteration, target-directory
+execution, selected-skill invocation, findings filing, and empty/missing-list no-op behavior.
 The complete timer lifecycle is covered by `scripts/test-root-scripts.sh` (run it with
 `bash scripts/test-root-scripts.sh`, expecting exit 0). It uses a temporary `HOME`, fake
 `systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs, so the fixture never
