@@ -355,6 +355,32 @@ expect_ok() {
   fi
 }
 
+# Contract assertions need to identify the missing artifact or field, rather
+# than reducing every failure to a bare grep exit status. Keep these checks
+# local to the timer fixture so the generated ownership contract is readable
+# at the point where it is enforced.
+assert_review_timer_header() {
+  local label="$1" expected="$2" line="$3" path="$4"
+  if [[ ! -f "$path" ]]; then
+    log_fail "$label — missing generated file: $path"
+  elif [[ "$(sed -n "${line}p" "$path")" == "$expected" ]]; then
+    log_pass "$label"
+  else
+    log_fail "$label — expected '$expected' at line $line in $path"
+  fi
+}
+
+assert_review_timer_field() {
+  local label="$1" field="$2" path="$3"
+  if [[ ! -f "$path" ]]; then
+    log_fail "$label — missing generated file: $path"
+  elif grep -qF -- "$field" "$path"; then
+    log_pass "$label"
+  else
+    log_fail "$label — missing '$field' in $path"
+  fi
+}
+
 # --- install-review-timers.sh fixtures --------------------------------------
 
 # These fixtures exercise the generated review and memory-tool runners without
@@ -703,10 +729,47 @@ test_review_timer_contracts() {
     factory-review-repo-hygiene
   )
   local workspace_skills=(plan-vs-built find-stubs repo-hygiene)
-  local unit service timer unit_runner snapshot_dir i
+  # The first four are the focused contract: three workspace-list review
+  # pairs plus the independent memory-tool pair. The installed-drift pair is
+  # an existing machine-local auxiliary owner of this same installer; keep it
+  # in the complete set so an unlisted owned unit cannot silently appear.
+  local core_units=(
+    factory-review-plan-vs-built
+    factory-review-find-stubs
+    factory-review-repo-hygiene
+    factory-review-memory-tool
+  )
+  local auxiliary_units=(factory-review-installed-drift)
+  local owned_units=("${core_units[@]}" "${auxiliary_units[@]}")
+  local unit service timer unit_runner snapshot_dir i declared_units
 
   expect_ok "review-timer installer passes bash syntax" \
     bash -n "$REVIEW_TIMER_INSTALL"
+
+  # Keep the service/timer ownership contract explicit in both directions:
+  # every declared installer unit is expected here, and every expected unit
+  # must be declared by the installer. This prevents a fixture-only name from
+  # masking a missing generated unit and distinguishes the owned set from
+  # unrelated user units.
+  declared_units="$(awk '
+    /^readonly UNIT_NAMES=\(/{inside=1; next}
+    inside && /^\)/{exit}
+    inside {gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print}
+  ' "$REVIEW_TIMER_INSTALL")"
+  if diff -u \
+    <(printf '%s\n' "${owned_units[@]}") \
+    <(printf '%s\n' "$declared_units") >/dev/null; then
+    log_pass "installer declares exactly the owned review unit set"
+  else
+    log_fail "installer owned review unit set differs from the contract"
+    diff -u \
+      <(printf '%s\n' "${owned_units[@]}") \
+      <(printf '%s\n' "$declared_units") | sed 's/^/      /'
+  fi
+  for unit in "${owned_units[@]}"; do
+    expect_ok "$unit is explicitly declared owned" \
+      grep -qxF -- "$unit" <<<"$declared_units"
+  done
 
   # Every installer-owned unit has the same service guarantees. Check all
   # five generated pairs, including the machine-local drift timer, rather
@@ -718,25 +781,34 @@ test_review_timer_contracts() {
     service="$unit_dir/$unit.service"
     timer="$unit_dir/$unit.timer"
     unit_runner="$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
-    expect_ok "$unit service is a oneshot" grep -qF 'Type=oneshot' "$service"
-    expect_ok "$unit service has the shared timeout" grep -qF 'TimeoutSec=30min' "$service"
-    expect_ok "$unit service has Nice=10" grep -qF 'Nice=10' "$service"
-    expect_ok "$unit service has the system PATH" grep -qF \
+    expect_ok "$unit service file exists" test -f "$service"
+    expect_ok "$unit timer file exists" test -f "$timer"
+    expect_ok "$unit runner file exists" test -f "$unit_runner"
+    assert_review_timer_header "$unit service carries the installer ownership marker" \
+      '# Managed by install-review-timers.sh' 2 "$service"
+    assert_review_timer_header "$unit timer carries the installer ownership marker" \
+      '# Managed by install-review-timers.sh' 2 "$timer"
+    assert_review_timer_header "$unit runner carries the installer ownership marker" \
+      '# Managed by install-review-timers.sh' 3 "$unit_runner"
+    assert_review_timer_field "$unit service is a oneshot" 'Type=oneshot' "$service"
+    assert_review_timer_field "$unit service has the shared timeout" 'TimeoutSec=30min' "$service"
+    assert_review_timer_field "$unit service has Nice=10" 'Nice=10' "$service"
+    assert_review_timer_field "$unit service has the system PATH" \
       'Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin' \
       "$service"
-    expect_ok "$unit service runs from the home directory" grep -qF \
+    assert_review_timer_field "$unit service runs from the home directory" \
       'WorkingDirectory=%h' "$service"
-    expect_ok "$unit service does not restart" grep -qF 'Restart=no' "$service"
-    expect_ok "$unit service sends stdout to the journal" grep -qF \
+    assert_review_timer_field "$unit service does not restart" 'Restart=no' "$service"
+    assert_review_timer_field "$unit service sends stdout to the journal" \
       'StandardOutput=journal' "$service"
-    expect_ok "$unit service sends stderr to the journal" grep -qF \
+    assert_review_timer_field "$unit service sends stderr to the journal" \
       'StandardError=journal' "$service"
-    expect_ok "$unit timer requires its service" grep -qF \
+    assert_review_timer_field "$unit timer requires its service" \
       "Requires=$unit.service" "$timer"
-    expect_ok "$unit timer has its staggered weekly schedule" grep -qF \
+    assert_review_timer_field "$unit timer has its staggered weekly schedule" \
       "OnCalendar=${schedules[$i]}" "$timer"
-    expect_ok "$unit timer is persistent" grep -qF 'Persistent=true' "$timer"
-    expect_ok "$unit timer is installable" grep -qF 'WantedBy=timers.target' "$timer"
+    assert_review_timer_field "$unit timer is persistent" 'Persistent=true' "$timer"
+    assert_review_timer_field "$unit timer is installable" 'WantedBy=timers.target' "$timer"
     expect_ok "$unit runner is executable" test -x "$unit_runner"
     expect_ok "$unit runner passes bash syntax" bash -n "$unit_runner"
     cp "$service" "$snapshot_dir/$unit.service"
@@ -753,12 +825,14 @@ test_review_timer_contracts() {
     unit="${workspace_units[$i]}"
     service="$unit_dir/$unit.service"
     unit_runner="$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
-    expect_ok "$unit service launches its generated runner" grep -qF \
+    assert_review_timer_field "$unit service launches its generated runner" \
       "$unit.sh" "$service"
-    expect_ok "$unit runner passes its workspace skill" grep -qF \
+    assert_review_timer_field "$unit runner passes its workspace skill" \
       "factory-review-workspace.sh\" \"${workspace_skills[$i]}" "$unit_runner"
-    expect_ok "$unit runner delegates to the workspace-review child" grep -qF \
+    assert_review_timer_field "$unit runner delegates to the workspace-review child" \
       'factory-review-workspace.sh' "$unit_runner"
+    assert_review_timer_field "$unit runner extends the command PATH" \
+      'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"' "$unit_runner"
     if command -v systemd-analyze >/dev/null 2>&1; then
       expect_ok "$unit timer has a valid weekly calendar" \
         systemd-analyze calendar "${schedules[$i]}"
@@ -768,10 +842,18 @@ test_review_timer_contracts() {
   local memory_runner="$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
   expect_ok "memory-tool child passes bash syntax" bash -n \
     "$REPO_ROOT/scripts/factory-review-memory-tool.sh"
-  expect_ok "memory runner delegates to the focused memory-tool child" grep -qF \
+  assert_review_timer_field "memory runner delegates to the focused memory-tool child" \
     'factory-review-memory-tool.sh' "$memory_runner"
+  assert_review_timer_field "memory runner extends the command PATH" \
+    'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"' "$memory_runner"
   expect_ok "memory runner does not contain the workspace loop" \
     test "$(grep -cF -- 'workspaces.txt' "$memory_runner" || true)" = 0
+  assert_review_timer_field "workspace child declares the workspace-list input" \
+    'WORKSPACES_CONFIG="${FACTORY_REVIEW_WORKSPACES_FILE:-$HOME/.config/factory-review/workspaces.txt}"' \
+    "$REPO_ROOT/scripts/factory-review-workspace.sh"
+  assert_review_timer_field "installer creates the workspace-list input" \
+    'readonly WORKSPACES_CONFIG="$FACTORY_REVIEW_DIR/workspaces.txt"' \
+    "$REVIEW_TIMER_INSTALL"
 
   # Parse the actual generated files with systemd's verifier when the host
   # provides it. The structural assertions above catch contract drift, while
