@@ -906,6 +906,31 @@ test_review_timer_contracts() {
       "$REVIEW_TIMER_HOME/.config/factory-review/$unit.sh"
   done
 
+  # Reinstall also reconciles a unit retired by a later installer contract.
+  # The marker is the ownership proof; a foreign same-named file with the
+  # marker in the wrong position must remain protected by the collision tests
+  # below.
+  local stale_unit=factory-review-retired-review
+  printf '[Unit]\n# Managed by install-review-timers.sh\nDescription=retired\n' \
+    >"$unit_dir/$stale_unit.service"
+  printf '[Unit]\n# Managed by install-review-timers.sh\nDescription=retired\n' \
+    >"$unit_dir/$stale_unit.timer"
+  printf '#!/usr/bin/env bash\n# generated\n# Managed by install-review-timers.sh\n' \
+    >"$REVIEW_TIMER_HOME/.config/factory-review/$stale_unit.sh"
+  : >"$REVIEW_TIMER_SYSTEMCTL_LOG"
+  expect_exit 0 "review-timer re-install removes retired owned units" \
+    run_review_timer_install
+  expect_ok "re-install removes retired service" test ! -e \
+    "$unit_dir/$stale_unit.service"
+  expect_ok "re-install removes retired timer" test ! -e \
+    "$unit_dir/$stale_unit.timer"
+  expect_ok "re-install removes retired runner" test ! -e \
+    "$REVIEW_TIMER_HOME/.config/factory-review/$stale_unit.sh"
+  expect_ok "re-install stops retired owned timer" grep -qF \
+    -- "--user stop $stale_unit.timer" "$REVIEW_TIMER_SYSTEMCTL_LOG"
+  expect_ok "re-install disables retired owned timer" grep -qF \
+    -- "--user disable $stale_unit.timer" "$REVIEW_TIMER_SYSTEMCTL_LOG"
+
   local dry_home="$REVIEW_TIMER_BASE/dry-home"
   mkdir -p "$dry_home"
   local dry_systemctl_log="$REVIEW_TIMER_BASE/systemctl.before-dry-run"

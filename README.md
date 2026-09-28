@@ -465,7 +465,9 @@ the independent `memory-tool` or installed-drift checks.
 
 Re-running the installer from the same checkout is idempotent: it regenerates the same
 installer-owned service, timer, and runner files, reloads the user manager, and re-enables the
-timers without creating duplicate units.
+timers without creating duplicate units. It also removes marker-owned artifacts from an older
+factory-review unit set, while refusing to overwrite or remove same-named files that do not carry
+the installer ownership marker.
 
 ```bash
 # Re-install or repair the generated units

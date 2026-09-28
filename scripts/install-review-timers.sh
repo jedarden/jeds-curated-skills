@@ -390,6 +390,63 @@ installer_owns_file() {
   )
 }
 
+# Return true when a unit is part of the current installer contract. The
+# separate lookup is intentional: files from an older contract may still
+# carry the ownership marker but no longer have entries in UNITS.
+declared_unit() {
+  local candidate="$1"
+  local unit_name
+
+  for unit_name in "${UNIT_NAMES[@]}"; do
+    [[ "$unit_name" == "$candidate" ]] && return 0
+  done
+  return 1
+}
+
+# Discover marker-owned units that are no longer in UNIT_NAMES. This closes
+# the lifecycle loop when a future installer release renames or retires a
+# unit: reinstall and uninstall both remove only the old artifacts that this
+# installer can positively identify as its own. Files with a marker in the
+# wrong position, symlinks, and unrelated names are ignored.
+stale_owned_units() {
+  local path unit file_kind
+  declare -A seen=()
+
+  for file_kind in service timer; do
+    for path in "$SYSTEMD_USER_DIR"/factory-review-*.$file_kind; do
+      [[ -f "$path" && ! -L "$path" ]] || continue
+      unit="${path##*/}"
+      unit="${unit%.$file_kind}"
+      declared_unit "$unit" && continue
+      installer_owns_file "$unit" "$file_kind" "$path" || continue
+      [[ -n "${seen[$unit]+present}" ]] && continue
+      seen["$unit"]=1
+      printf '%s\n' "$unit"
+    done
+  done
+
+  for path in "$FACTORY_REVIEW_DIR"/factory-review-*.sh; do
+    [[ -f "$path" && ! -L "$path" ]] || continue
+    unit="${path##*/}"
+    unit="${unit%.sh}"
+    declared_unit "$unit" && continue
+    installer_owns_file "$unit" runner "$path" || continue
+    [[ -n "${seen[$unit]+present}" ]] && continue
+    seen["$unit"]=1
+    printf '%s\n' "$unit"
+  done
+}
+
+remove_stale_owned_units() {
+  local stale_unit
+
+  while IFS= read -r stale_unit; do
+    [[ -n "$stale_unit" ]] || continue
+    echo -e "${YELLOW}Reconciling stale installer-owned unit:${NC} $stale_unit"
+    uninstall_unit "$stale_unit"
+  done < <(stale_owned_units)
+}
+
 # A checkout may be used from a shell without systemd installed at all. Keep
 # that case distinct from a present systemctl whose user manager is unavailable
 # so installation remains successful after writing the generated artifacts and
@@ -537,6 +594,11 @@ install_all() {
 
   validate_install_targets
 
+  # Remove artifacts from an older installer contract before regenerating the
+  # current set. The final daemon-reload below makes this reconciliation
+  # visible to the user manager in the same transaction as installation.
+  remove_stale_owned_units
+
   # Create systemd user directory
   if [[ "$DRY_RUN" == "false" ]]; then
     mkdir -p "$SYSTEMD_USER_DIR"
@@ -610,6 +672,7 @@ uninstall_all() {
   for unit_name in "${UNIT_NAMES[@]}"; do
     uninstall_unit "$unit_name"
   done
+  remove_stale_owned_units
 
   # Reload systemd after owned files changed. A no-op uninstall should not
   # disturb an unrelated user manager, and dry-run prints the command only.
