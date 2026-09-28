@@ -13,6 +13,10 @@ BIN_DIR="$HOME_DIR/.local/bin"
 FIRST_WORKSPACE="$HOME_DIR/work one"
 SECOND_WORKSPACE="$HOME_DIR/work-two"
 UNSUPPORTED_WORKSPACE="$HOME_DIR/work-unsupported"
+NON_DIRECTORY_ENTRY="$HOME_DIR/not-a-directory"
+UNSUPPORTED_HOME_ENTRY="~otheruser/workspace"
+COMMAND_MARKER="$BASE/command-substitution-ran"
+LITERAL_SHELL_PATH="$HOME_DIR/\$(touch $COMMAND_MARKER)"
 CONFIG="$HOME_DIR/.config/factory-review/workspaces.txt"
 CLAUDE_LOG="$BASE/claude.log"
 CLAUDE_ARGS_LOG="$BASE/claude-args.log"
@@ -21,6 +25,8 @@ BEAD_LOG="$BASE/bead.log"
 mkdir -p "$BIN_DIR" "$FIRST_WORKSPACE/.beads" "$SECOND_WORKSPACE/.beads" \
   "$UNSUPPORTED_WORKSPACE/.beads" \
   "$(dirname "$CONFIG")"
+printf '%s\n' fixture >"$NON_DIRECTORY_ENTRY"
+mkdir -p "$LITERAL_SHELL_PATH"
 printf 'bead_cli:\n  backend: bead-rs\n' >"$FIRST_WORKSPACE/.needle.yaml"
 printf 'bead_cli:\n  backend: bead-rs\n' >"$SECOND_WORKSPACE/.needle.yaml"
 printf 'bead_cli:\n  backend: unsupported-fixture\n' >"$UNSUPPORTED_WORKSPACE/.needle.yaml"
@@ -86,8 +92,24 @@ assert_has "$FIRST_WORKSPACE" "$CLAUDE_LOG"
 assert_has "$SECOND_WORKSPACE" "$CLAUDE_LOG"
 [[ ! -s "$BEAD_LOG" ]]
 
+# Malformed entries are reported and skipped explicitly. Shell-looking path
+# text remains literal: reading the list must not evaluate command syntax.
+printf '%s\n%s\n%s\n' "$UNSUPPORTED_HOME_ENTRY" "$NON_DIRECTORY_ENTRY" \
+  "$LITERAL_SHELL_PATH" >"$CONFIG"
+before="$(wc -l <"$CLAUDE_LOG")"
+output="$(run_child clean repo-hygiene 2>&1)"
+assert_has 'Skipping malformed workspace entry (unsupported home expansion)' \
+  <(printf '%s\n' "$output")
+assert_has 'Skipping malformed workspace entry (not a directory)' \
+  <(printf '%s\n' "$output")
+assert_has "repo-hygiene clean in $LITERAL_SHELL_PATH; nothing to file." \
+  <(printf '%s\n' "$output")
+[[ ! -e "$COMMAND_MARKER" ]]
+[[ "$(wc -l <"$CLAUDE_LOG")" -eq $((before + 1)) ]]
+
 # Findings are filed through the target workspace's backend and still use the
 # selected skill; this also proves bead execution occurs in that workspace.
+printf '%s\n%s\n' "$FIRST_WORKSPACE" "$SECOND_WORKSPACE" >"$CONFIG"
 output="$(run_child findings find-stubs)"
 assert_has 'Filed review findings bead' <(printf '%s\n' "$output")
 assert_count 2 "$BEAD_LOG"

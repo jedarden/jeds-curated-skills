@@ -182,10 +182,26 @@ while IFS= read -r workspace || [[ -n "$workspace" ]]; do
     continue
   fi
 
+  # Only the current user's ~ and ~/path forms are supported. Do not invoke a
+  # shell parser here: a literal path such as $(touch /tmp/marker) must stay a
+  # path and must never become executable input.
+  if [[ "$workspace" == "~"* && "$workspace" != "~" && "$workspace" != "~/"* ]]; then
+    echo "Skipping malformed workspace entry (unsupported home expansion): $workspace" >&2
+    continue
+  fi
+
   # Expand ~ to the service user's home, then resolve relative paths there.
   workspace="${workspace/#\~/$HOME}"
   if [[ "$workspace" != /* ]]; then
     workspace="$HOME/$workspace"
+  fi
+
+  # A path that exists but is not a directory is malformed for this list.
+  # Keep missing paths distinct so a stale checkout is reported differently
+  # from an invalid workspace target.
+  if [[ -e "$workspace" && ! -d "$workspace" ]]; then
+    echo "Skipping malformed workspace entry (not a directory): $workspace" >&2
+    continue
   fi
 
   if [[ ! -d "$workspace" ]]; then
