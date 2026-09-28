@@ -350,13 +350,13 @@ cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-The installer manages four weekly workspace review timers plus one machine-local drift timer,
-staggered across Monday through Friday. The four review timers are
-`factory-review-plan-vs-built`, `factory-review-find-stubs`, `factory-review-repo-hygiene`, and
-`factory-review-memory-tool`; they read `workspaces.txt` as described below. The separate
-`factory-review-installed-drift` timer checks this checkout's installed-skill drift and does not
-use that list. Each row installs the named `.timer`, its paired `.service`, and a runner script
-under `~/.config/factory-review/`:
+The installer manages three weekly workspace-review timers, one weekly host memory check, and
+one machine-local drift timer, staggered across Monday through Friday. The workspace timers are
+`factory-review-plan-vs-built`, `factory-review-find-stubs`, and `factory-review-repo-hygiene`;
+they read `workspaces.txt` as described below. `factory-review-memory-tool` runs independently
+of that list, and `factory-review-installed-drift` checks this checkout's installed-skill drift.
+Each row installs the named `.timer`, its paired `.service`, and a runner script under
+`~/.config/factory-review/`:
 
 | Timer | Service | Schedule | Action |
 |-------|---------|----------|--------|
@@ -519,20 +519,30 @@ left alone.
 
 ### Fixture verification
 
-The focused workspace child fixture is `scripts/test-review-runner.sh`; it uses a temporary
-`HOME` and fake `claude`/`bead` commands to prove workspace iteration, target-directory
-execution, selected-skill invocation, findings filing, and empty/missing-list no-op behavior.
-The complete timer lifecycle is covered by `scripts/test-root-scripts.sh` (run it with
-`bash scripts/test-root-scripts.sh`, expecting exit 0). It uses a temporary `HOME`, fake
-`systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs, so the fixture never
-touches the real user manager, workspace list, or bead store. It checks the four workspace
-timers through a fake `systemctl --user list-timers` response and also performs a read-only live
-probe when the host's user manager is available. A host without systemd or a user bus records
-`SKIP` and remains green. The fixture checks every generated service,
-timer, and runner (the four workspace review timers plus the installed-drift timer), including
+The focused workspace child fixture is `scripts/test-review-runner.sh`; it creates two temporary
+fixture workspaces and uses fake `claude`/`bead` commands to prove workspace iteration,
+target-directory execution, selected-skill invocation, successful clean/no-file behavior,
+findings filing, and empty/missing-list no-op behavior. The complete timer lifecycle is covered
+by `scripts/test-root-scripts.sh` (run it with `bash scripts/test-root-scripts.sh`, expecting
+exit 0). It uses a temporary `HOME`, fake `systemctl`, fake `claude`, fake `memory-tool`, and
+fake `bead`/`bf` CLIs, so the fixture never touches the real user manager, workspace list, or
+bead store. It checks the three workspace timers and the independent memory timer through a fake
+`systemctl --user list-timers` response and also performs a read-only live probe when the host's
+user manager is available. A host without systemd or a user bus records `SKIP` and remains green.
+The fixture checks every generated service,
+timer, and runner (the three workspace-review timers, independent memory timer, and
+installed-drift timer), including
 oneshot/timeout/Nice/PATH/journal properties, staggered calendars, persistent activation, and
 manual service execution. When `systemd-analyze` is available, it also verifies every generated
-service and timer file; otherwise it records an explicit `SKIP`. It also checks that repeated install is byte-identical, `--dry-run`
+service and timer file with the equivalent of:
+
+```bash
+systemd-analyze verify \
+  ~/.config/systemd/user/factory-review-*.service \
+  ~/.config/systemd/user/factory-review-*.timer
+```
+
+When `systemd-analyze` is unavailable, it records an explicit `SKIP`. It also checks that repeated install is byte-identical, `--dry-run`
 prints the generated commands without filesystem side effects, all three reviews visit two
 configured workspaces, clean reports produce no bead and an explicit `nothing to file` result,
 findings carry captured output into beads through both backends, failed Claude commands preserve
