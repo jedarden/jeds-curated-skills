@@ -410,6 +410,7 @@ REVIEW_TIMER_BEAD_ISSUE=""
 REVIEW_TIMER_BF_ISSUE=""
 REVIEW_TIMER_BF_LIST_RC=0
 REVIEW_TIMER_MEMORY_CWD_LOG=""
+REVIEW_TIMER_MEMORY_INVOCATIONS=""
 REVIEW_TIMER_CLAUDE_LOG=""
 REVIEW_TIMER_CLAUDE_CWD_LOG=""
 REVIEW_TIMER_MODE="pass"
@@ -438,6 +439,7 @@ new_review_timer_fixture() {
   REVIEW_TIMER_BEAD_ISSUE="$REVIEW_TIMER_BASE/bead-issue-count"
   REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BASE/bf-issue-count"
   REVIEW_TIMER_MEMORY_CWD_LOG="$REVIEW_TIMER_BASE/memory-tool.cwd"
+  REVIEW_TIMER_MEMORY_INVOCATIONS="$REVIEW_TIMER_BASE/memory-tool.invocations"
   REVIEW_TIMER_CLAUDE_LOG="$REVIEW_TIMER_BASE/claude.log"
   REVIEW_TIMER_CLAUDE_CWD_LOG="$REVIEW_TIMER_BASE/claude.cwd"
 
@@ -479,7 +481,7 @@ EOF
   REVIEW_TIMER_PATH="$REVIEW_TIMER_SHIM:$PATH"
   : >"$REVIEW_TIMER_SYSTEMCTL_STATE"
 
-  printf 'bead_cli:\n  backend: bead-rs\n' >"$REVIEW_TIMER_WORKSPACE/.needle.yaml"
+  printf 'bead_cli:\n  backend: "bead-rs"\n' >"$REVIEW_TIMER_WORKSPACE/.needle.yaml"
   printf '{}\n' >"$REVIEW_TIMER_WORKSPACE/.beads/config.json"
   printf 'bead_cli:\n  backend: bf\n' >"$REVIEW_TIMER_LEGACY_WORKSPACE/.needle.yaml"
   printf 'backend: bf\n' >"$REVIEW_TIMER_LEGACY_WORKSPACE/.beads/config.yaml"
@@ -487,6 +489,7 @@ EOF
   cat >"$REVIEW_TIMER_HOME/.local/bin/memory-tool" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "${PWD:?}" >"${REVIEW_TIMER_MEMORY_CWD_LOG:?}"
+printf '%s\n' invoked >>"${REVIEW_TIMER_MEMORY_INVOCATIONS:?}"
 printf '%s\n' 'diagnostic token=fixture-secret' >&2
 if [[ "${REVIEW_TIMER_MODE:-pass}" == pass ]]; then
   exit 0
@@ -614,6 +617,7 @@ run_review_timer_runner() {
     REVIEW_TIMER_BF_ISSUE="$REVIEW_TIMER_BF_ISSUE" \
     REVIEW_TIMER_BF_LIST_RC="$REVIEW_TIMER_BF_LIST_RC" \
     REVIEW_TIMER_MEMORY_CWD_LOG="$REVIEW_TIMER_MEMORY_CWD_LOG" \
+    REVIEW_TIMER_MEMORY_INVOCATIONS="$REVIEW_TIMER_MEMORY_INVOCATIONS" \
     "$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
 }
 
@@ -1076,6 +1080,7 @@ test_review_timer_contracts() {
   # token that the fixture emits on stderr.
   REVIEW_TIMER_MODE=pass
   rm -f "$REVIEW_TIMER_BEAD_LOG" "$REVIEW_TIMER_BEAD_ISSUE"
+  : >"$REVIEW_TIMER_MEMORY_INVOCATIONS"
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 0 "passing memory check succeeds"
   assert_review_timer_output_has "passing check reports nothing to file" \
@@ -1086,6 +1091,8 @@ test_review_timer_contracts() {
     'fixture-secret'
   expect_ok "passing check runs in the configured home workspace" \
     grep -qFx -- "$REVIEW_TIMER_WORKSPACE" "$REVIEW_TIMER_MEMORY_CWD_LOG"
+  expect_ok "passing check invokes memory-tool exactly once" test \
+    "$(wc -l <"$REVIEW_TIMER_MEMORY_INVOCATIONS")" = 1
   expect_ok "passing check files no bead" \
     test ! -e "$REVIEW_TIMER_BEAD_ISSUE"
   expect_ok "passing check never invokes bead-rs" \
@@ -1094,6 +1101,7 @@ test_review_timer_contracts() {
   # A failed bead-rs check returns the check's failure code, files one stable
   # issue, and remains idempotent on the next failed run.
   REVIEW_TIMER_MODE=fail
+  : >"$REVIEW_TIMER_MEMORY_INVOCATIONS"
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 23 "failed bead-rs memory check preserves failure code"
   assert_review_timer_output_has "failed bead-rs check reports filing" \
@@ -1113,12 +1121,17 @@ test_review_timer_contracts() {
     grep -qF -- 'exit\ 23' "$REVIEW_TIMER_BEAD_LOG"
   expect_ok "failure bead records the check command context" \
     grep -qF -- 'command:\ memory-tool\ check' "$REVIEW_TIMER_BEAD_LOG"
+  expect_ok "failed check invokes memory-tool exactly once" test \
+    "$(wc -l <"$REVIEW_TIMER_MEMORY_INVOCATIONS")" = 1
+  : >"$REVIEW_TIMER_MEMORY_INVOCATIONS"
   capture_review_timer_runner "$REVIEW_TIMER_WORKSPACE"
   assert_review_timer_rc 23 "repeated bead-rs failure preserves failure code"
   assert_review_timer_output_has "repeated bead-rs failure identifies the existing bead" \
     'Memory-tool check failure bead fixture-memory-failure already exists'
   expect_ok "repeated bead-rs failure remains one issue" \
     test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
+  expect_ok "repeated failure invokes memory-tool exactly once" test \
+    "$(wc -l <"$REVIEW_TIMER_MEMORY_INVOCATIONS")" = 1
 
   # The legacy backend uses its own create flag spelling and list-based
   # deduplication; it must receive the same failure exactly once.
