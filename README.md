@@ -120,8 +120,9 @@ together.
 To run any of them by hand:
 
 ```bash
-./scripts/test-root-scripts.sh    # includes factory-review timer fixtures
-./scripts/test-script-fixtures.sh   # ~3s, no network, no LLM
+./scripts/test-review-timers.sh     # focused installer/lifecycle fixture
+./scripts/test-root-scripts.sh      # all root-script contract fixtures
+./scripts/test-script-fixtures.sh  # ~3s, no network, no LLM
 ```
 
 The fixture suite is the regression net for the shared `lib/common.sh` extraction: every fixture passes identically against the pre- and post-extraction scripts, so a behavior change in the shared helpers (or in any scorer) surfaces as a named failing pin instead of a silent count drift. The LLM-in-the-loop functional sections of each `SELF-TEST.md` stay manual runbooks by design and are not covered here.
@@ -343,7 +344,10 @@ keys and never displacing a `statusLine` that runs something else.
 
 ## Factory Review Timers
 
-For automated, scheduled review of multiple workspaces, install the systemd `--user` timers:
+For automated, scheduled review of multiple workspaces, install the systemd `--user` timers.
+The commands below assume a Bash-capable host with a systemd user manager. The install itself
+also works without an active user manager and leaves the generated units in place with an
+actionable warning; `systemctl --user` commands require a login session with a user bus:
 
 ```bash
 cd ~/jeds-curated-skills
@@ -521,6 +525,15 @@ removing their files, then reloads the user manager; unrelated user units and sc
 left alone.
 
 ### Fixture verification
+
+The focused installer fixture is `scripts/test-review-timers.sh`; it creates a temporary
+`HOME`, fake `systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs and runs
+the complete `scripts/install-review-timers.sh` lifecycle without touching the real user
+manager, workspace list, or bead store. It checks idempotent install and uninstall, dry-run
+side-effect safety, generated service/timer/runner validation, manual service execution, and
+memory-tool success/failure output including safe bead filing and deduplication. The broader
+`scripts/test-root-scripts.sh` suite runs the same fixture alongside the other root-script
+contracts.
 
 The focused workspace child fixture is `scripts/test-review-runner.sh`; it creates two temporary
 fixture workspaces and uses fake `claude`/`bead` commands to prove workspace iteration,

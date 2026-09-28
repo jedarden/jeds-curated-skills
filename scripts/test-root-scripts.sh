@@ -70,6 +70,12 @@
 # the real HOME is never read or written. Usage:
 #
 #   scripts/test-root-scripts.sh
+#   scripts/test-root-scripts.sh --review-timers
+#
+# The --review-timers mode runs only the isolated installer lifecycle fixture.
+# Keep it available as a small, reproducible check for changes to
+# scripts/install-review-timers.sh without requiring the unrelated root-script
+# contracts to run first.
 #
 # Exit codes: 0 = all contracts hold, 1 = a contract is broken
 #
@@ -1748,19 +1754,28 @@ test_push_ci_contracts() {
 }
 
 main() {
+  if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --review-timers ) ]]; then
+    echo "Usage: $0 [--review-timers]" >&2
+    exit 2
+  fi
+
   echo "Root-script contract tests for jeds-curated-skills"
   echo "Repo root: $REPO_ROOT"
   echo "(fixtures run against a temp HOME; the real HOME is untouched)"
 
-  test_check_installed_contracts
-  test_stale_inline_contracts
-  test_install_contracts
-  test_install_hooks_contracts
-  test_workspace_review_child
-  test_review_timer_contracts
-  test_live_review_timer_visibility
-  test_statusline_contracts
-  test_push_ci_contracts
+  if [[ "${1:-}" == --review-timers ]]; then
+    test_review_timer_contracts
+  else
+    test_check_installed_contracts
+    test_stale_inline_contracts
+    test_install_contracts
+    test_install_hooks_contracts
+    test_workspace_review_child
+    test_review_timer_contracts
+    test_live_review_timer_visibility
+    test_statusline_contracts
+    test_push_ci_contracts
+  fi
 
   echo ""
   echo "========================================"
