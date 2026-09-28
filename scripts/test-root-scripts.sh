@@ -765,6 +765,14 @@ test_review_timer_contracts() {
     fi
   done
 
+  local memory_runner="$REVIEW_TIMER_HOME/.config/factory-review/factory-review-memory-tool.sh"
+  expect_ok "memory-tool child passes bash syntax" bash -n \
+    "$REPO_ROOT/scripts/factory-review-memory-tool.sh"
+  expect_ok "memory runner delegates to the focused memory-tool child" grep -qF \
+    'factory-review-memory-tool.sh' "$memory_runner"
+  expect_ok "memory runner does not contain the workspace loop" \
+    test "$(grep -cF -- 'workspaces.txt' "$memory_runner" || true)" = 0
+
   # Parse the actual generated files with systemd's verifier when the host
   # provides it. The structural assertions above catch contract drift, while
   # this catches syntax or calendar errors that a shell fixture cannot see.
