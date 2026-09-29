@@ -543,7 +543,7 @@ Remove only the timers, services, and runner scripts owned by this installer wit
 
 The workspace list is not removed. Uninstall stops and disables active/enabled timers before
 removing their files, then reloads the user manager; unrelated user units and scripts are
-left alone.
+left byte-for-byte unchanged.
 
 ### Fixture verification
 
@@ -587,7 +587,8 @@ findings carry captured output into beads through both backends, failed Claude c
 their nonzero status, an empty workspace list reports `No configured workspaces; nothing to file.`,
 a passing memory check files no bead, and failing bead-rs/legacy checks preserve their exit code
 while filing one deduplicated bead without exposing diagnostics. Finally, `--uninstall` removes every
-installer-owned artifact while preserving the workspace list and foreign files. `scripts/lint-shell.sh`
+installer-owned artifact while preserving the workspace list and foreign files byte-for-byte.
+`scripts/lint-shell.sh`
 also exits successfully with an explicit skip message when ShellCheck is unavailable; structural
 `bash -n` validation still runs. Keep these expectations in sync with this operator documentation
 when the timer contract changes.
