@@ -553,6 +553,22 @@ left byte-for-byte unchanged.
 
 ### Fixture verification
 
+Run the focused lifecycle checks directly after changing a runner or the installer:
+
+```bash
+bash scripts/test-review-runner.sh
+bash scripts/test-review-timers.sh
+```
+
+Both commands must exit `0`. The workspace-runner fixture prints
+`factory-review-workspace fixture: PASS`. The timer fixture prints a summary ending in
+`Failed: 0`; its manual-service cases also require the observable outcomes that matter in a
+real journal: clean reviews print an explicit `nothing to file` result and create no bead,
+finding reviews print `Filed review finding ...` and create one bead per finding, and the
+successful memory check prints `memory-tool check passed; nothing to file.` followed by
+`No bead needed.`. Its failing memory-check cases preserve the check's nonzero exit status and
+print the filed bead identifier without forwarding diagnostic output.
+
 The focused installer fixture is `scripts/test-review-timers.sh`; it creates a temporary
 `HOME`, fake `systemctl`, fake `claude`, fake `memory-tool`, and fake `bead`/`bf` CLIs and runs
 the complete `scripts/install-review-timers.sh` lifecycle without touching the real user
