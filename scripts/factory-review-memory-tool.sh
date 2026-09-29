@@ -54,7 +54,7 @@ echo "memory-tool check failed with exit $check_rc; attempting to file one bead.
 backend=""
 if [[ -f "$HOME_WORKSPACE/.needle.yaml" ]]; then
   backend="$(awk '$1 == "backend:" || $1 == "bead_cli.backend:" {print $2; exit}' \
-    "$HOME_WORKSPACE/.needle.yaml" | tr -d "\"'")"
+    "$HOME_WORKSPACE/.needle.yaml" | tr -d "\"'" | tr -d '\r')"
 else
   # The store layout is a compatibility fallback for older workspaces that
   # predate .needle.yaml. Prefer the explicit workspace configuration above.

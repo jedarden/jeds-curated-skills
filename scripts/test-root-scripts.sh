@@ -1193,6 +1193,8 @@ test_review_timer_contracts() {
     'Memory-tool check failure bead fixture-memory-failure already exists'
   expect_ok "repeated bead-rs failure remains one issue" \
     test "$(<"$REVIEW_TIMER_BEAD_ISSUE")" = 1
+  expect_ok "bead-rs failure has exactly one persisted bead" \
+    test "$(wc -l <"$REVIEW_TIMER_BEAD_ISSUE")" = 1
   expect_ok "repeated failure invokes memory-tool exactly once" test \
     "$(wc -l <"$REVIEW_TIMER_MEMORY_INVOCATIONS")" = 1
 
@@ -1213,8 +1215,28 @@ test_review_timer_contracts() {
   assert_review_timer_rc 23 "repeated legacy failure preserves failure code"
   expect_ok "repeated legacy failure remains one issue" \
     test "$(<"$REVIEW_TIMER_BF_ISSUE")" = 1
+  expect_ok "legacy failure has exactly one persisted bead" \
+    test "$(wc -l <"$REVIEW_TIMER_BF_ISSUE")" = 1
   expect_ok "legacy rerun does not create a second bead" \
     test "$(grep -c '^bf create ' "$REVIEW_TIMER_BF_LOG" || true)" = 1
+
+  # Backend values may be written with the flat key form and CRLF line
+  # endings by older workspace tooling. The check must still select bead-rs
+  # rather than treating the carriage return as part of the backend name.
+  local crlf_backend_workspace="$REVIEW_TIMER_BASE/crlf-backend-workspace"
+  mkdir -p "$crlf_backend_workspace/.beads"
+  printf 'bead_cli.backend: "bead-rs"\r\n' \
+    >"$crlf_backend_workspace/.needle.yaml"
+  rm -f "$REVIEW_TIMER_BEAD_LOG" "$REVIEW_TIMER_BEAD_ISSUE"
+  capture_review_timer_runner "$crlf_backend_workspace"
+  assert_review_timer_rc 23 "CRLF flat backend memory check preserves failure code"
+  assert_review_timer_output_has "CRLF flat backend files through bead-rs" \
+    'Filed memory-tool check failure bead fixture-memory-failure in '
+  expect_ok "CRLF flat backend creates exactly one bead" \
+    test "$(wc -l <"$REVIEW_TIMER_BEAD_ISSUE")" = 1
+  expect_ok "CRLF flat backend uses bead-rs unique reference" \
+    grep -qF -- '--unique-ref factory-review:memory-tool-check' \
+    "$REVIEW_TIMER_BEAD_LOG"
 
   # An explicitly selected home workspace must not silently fall back to the
   # install checkout when its backend declaration is missing or unsupported.
