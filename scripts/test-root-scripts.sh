@@ -781,6 +781,18 @@ test_review_timer_contracts() {
       grep -qxF -- "$unit" <<<"$declared_units"
   done
 
+  # The four core timers are the user-facing review contract. Keep their
+  # exact names independently visible from the optional, machine-local
+  # installed-drift timer so the required set is not inferred from unrelated
+  # user units.
+  local expected_core_timers actual_core_timers
+  expected_core_timers="$(printf '%s.timer\n' "${core_units[@]}" | sort)"
+  if [[ "${#core_units[@]}" == 4 ]]; then
+    log_pass "the four required review timers are explicit"
+  else
+    log_fail "the four required review timers are not explicit"
+  fi
+
   # Every installer-owned unit has the same service guarantees. Check all
   # five generated pairs, including the machine-local drift timer, rather
   # than allowing the memory unit alone to stand in for the lifecycle.
@@ -894,8 +906,18 @@ test_review_timer_contracts() {
   # an end-to-end visibility assertion rather than only a log assertion.
   local visible_timers
   visible_timers="$(run_review_timer_list_timers)"
-  for unit in factory-review-plan-vs-built factory-review-find-stubs \
-    factory-review-repo-hygiene factory-review-memory-tool; do
+  actual_core_timers="$(grep -Eo \
+    'factory-review-(plan-vs-built|find-stubs|repo-hygiene|memory-tool)[.]timer' \
+    <<<"$visible_timers" | sort)"
+  if diff -u <(printf '%s\n' "$expected_core_timers") \
+    <(printf '%s\n' "$actual_core_timers") >/dev/null; then
+    log_pass "systemctl --user list-timers exposes exactly the four required review timers"
+  else
+    log_fail "systemctl --user list-timers does not expose exactly the four required review timers"
+    diff -u <(printf '%s\n' "$expected_core_timers") \
+      <(printf '%s\n' "$actual_core_timers") | sed 's/^/      /'
+  fi
+  for unit in "${core_units[@]}"; do
     expect_ok "$unit is visible through systemctl --user list-timers" \
       grep -qF -- "$unit.timer" <<<"$visible_timers"
   done
@@ -1000,6 +1022,18 @@ test_review_timer_contracts() {
     expect_ok "dry-run prints second ${workspace_skills[$i]} command" grep -qF \
       "(cd -- $REVIEW_TIMER_LEGACY_WORKSPACE && claude --print /${workspace_skills[$i]} .)" \
       <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  done
+  # Dry-run output must name every required timer, including the independent
+  # memory check; checking only the three workspace commands would allow the
+  # fourth core timer to disappear from the operator preview unnoticed.
+  for i in "${!core_units[@]}"; do
+    unit="${core_units[$i]}"
+    expect_ok "dry-run prints required $unit service" grep -qF \
+      "$unit.service" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints required $unit timer" grep -qF \
+      "$unit.timer" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints required $unit schedule" grep -qF \
+      "OnCalendar=${schedules[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
   done
   expect_ok "configured dry-run does not create unit files" \
     test ! -e "$command_dry_home/.config/systemd"

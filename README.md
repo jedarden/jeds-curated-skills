@@ -356,7 +356,8 @@ cd ~/jeds-curated-skills
 
 The four required review timers are three weekly workspace-review timers and one weekly host
 memory check, staggered across Monday through Thursday. The installer also manages one
-machine-local drift timer on Friday. The workspace timers are
+machine-local drift timer on Friday, which is auxiliary to the four-review-timer contract. The
+workspace timers are
 `factory-review-plan-vs-built`, `factory-review-find-stubs`, and `factory-review-repo-hygiene`;
 they read `workspaces.txt` as described below. `factory-review-memory-tool` runs independently
 of that list, and `factory-review-installed-drift` checks this checkout's installed-skill drift.
@@ -480,8 +481,13 @@ the installer ownership marker.
 # Reload systemd
 systemctl --user daemon-reload
 
-# Enable all timers
-systemctl --user enable --now factory-review-*.timer
+# Enable the timers managed by this installer (the first four are the required review timers)
+systemctl --user enable --now \
+  factory-review-plan-vs-built.timer \
+  factory-review-find-stubs.timer \
+  factory-review-repo-hygiene.timer \
+  factory-review-memory-tool.timer \
+  factory-review-installed-drift.timer
 
 # List next/last runs for every factory-review timer
 systemctl --user list-timers --all | grep factory-review
@@ -546,8 +552,7 @@ bead store. It checks the three workspace timers and the independent memory time
 `systemctl --user list-timers` response and also performs a read-only live probe when the host's
 user manager is available. A host without systemd or a user bus records `SKIP` and remains green.
 The fixture checks every generated service,
-timer, and runner (the three workspace-review timers, independent memory timer, and
-installed-drift timer), including
+timer, and runner (the four required review timers plus the auxiliary installed-drift timer), including
 oneshot/timeout/Nice/PATH/journal properties, staggered calendars, persistent activation, and
 manual service execution. When `systemd-analyze` is available, it also verifies every generated
 service and timer file with the equivalent of:
@@ -558,7 +563,9 @@ systemd-analyze verify \
   ~/.config/systemd/user/factory-review-*.timer
 ```
 
-When `systemd-analyze` is unavailable, it records an explicit `SKIP`. It also checks that repeated install is byte-identical, `--dry-run`
+When `systemd-analyze` is unavailable, it records an explicit `SKIP`. The isolated fake manager
+compares the four required timer names exactly and checks the auxiliary installed-drift timer
+separately, without depending on unrelated user units. It also checks that repeated install is byte-identical, `--dry-run`
 prints the generated commands without filesystem side effects, all three reviews visit two
 configured workspaces, clean reports produce no bead and an explicit `nothing to file` result,
 findings carry captured output into beads through both backends, failed Claude commands preserve
