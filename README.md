@@ -406,17 +406,23 @@ Here `N` is each of the four required unit names plus the auxiliary
 `factory-review-installed-drift` name. The workspace list is the only generated path that is
 not removed by `--uninstall`.
 
-Services are `Type=oneshot` units with a 30-minute timeout and `Nice=10`; output goes to the
-user journal. Timers use `Persistent=true`, so a missed scheduled run is considered when the
-user manager returns. Installation runs `systemctl --user daemon-reload` and
-`systemctl --user enable --now` for all five timers when the user manager is available. If it
-is not available, the generated files remain installed and the script prints the command to
-activate them later.
+The generated service contract is the same for all five installer-owned units:
+`Type=oneshot`, `TimeoutSec=30min`, `Nice=10`,
+`Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin`, and journal-bound
+standard output and error. Generated runners extend that base PATH with the user command
+directories needed by their child (`/run/current-system/sw/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH`
+for workspace reviews; `$HOME/.local/bin:$HOME/.cargo/bin:$PATH` for the memory check). Timers
+use `Persistent=true`, so a missed scheduled run is considered when the user manager returns.
+Installation runs `systemctl --user daemon-reload` and `systemctl --user enable --now` for all
+five timers when the user manager is available. If it is not available, the generated files
+remain installed and the script prints the command to activate them later.
 
 The three workspace-review service files are thin wrappers around the checked-in
 `scripts/factory-review-workspace.sh` child. That child owns workspace iteration, the
-`claude --print` invocation, clean/no-op reporting, and findings filing; the installer keeps
-systemd lifecycle generation and the separate host checks in their own runners.
+`claude --print` invocation, clean/no-op reporting, and findings filing; the installer owns only
+systemd lifecycle generation and the separate host-check runners. The memory-check child owns
+its check and failure-bead behavior, while the installed-drift runner owns the machine-local
+drift check. This boundary keeps the installer contract independent of review report details.
 
 The installer creates `~/.config/factory-review/workspaces.txt` with comments if it does not
 exist. Before relying on the three workspace timers, edit that file and put one workspace path
@@ -436,8 +442,8 @@ Blank lines and lines whose first non-whitespace character is `#` are ignored. `
 skipped. Each workspace timer invokes `claude --print` with its skill in report-only mode, captures
 the combined output, and prints it to the service journal. Claude is asked to finish with
 `FACTORY_REVIEW_RESULT: clean` or `FACTORY_REVIEW_RESULT: findings`; a clean result prints an
-explicit `nothing to file` outcome, while findings are filed as one report bead in the target
-workspace. Filing uses the workspace's declared backend (`bead` for `bead-rs`, `bf` for legacy
+explicit `nothing to file` outcome and creates no bead, while findings are filed as one report
+bead in the target workspace. Filing uses the workspace's declared backend (`bead` for `bead-rs`, `bf` for legacy
 `bf`/bead-forge), stable report hashing for bead-rs deduplication, and open-title lookup for
 legacy bf. The review runners never write `.beads/` directly. A Claude or filing failure is
 reported and makes that service fail, but the remaining configured workspaces are still
