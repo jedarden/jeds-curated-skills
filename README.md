@@ -354,29 +354,30 @@ cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-The four required review timer/service pairs are three weekly workspace-review pairs and one
-weekly host memory-check pair, staggered across Monday through Thursday:
+The core contract is exactly four required timer/service pairs: three weekly workspace-review
+pairs and one weekly host memory-check pair, staggered across Monday through Thursday. The
+installer also creates one explicitly auxiliary, machine-local drift pair on Friday; it is
+documented separately so it is not mistaken for a fifth required workspace review:
 
 - `factory-review-plan-vs-built.timer` / `factory-review-plan-vs-built.service`
 - `factory-review-find-stubs.timer` / `factory-review-find-stubs.service`
 - `factory-review-repo-hygiene.timer` / `factory-review-repo-hygiene.service`
 - `factory-review-memory-tool.timer` / `factory-review-memory-tool.service`
 
-The installer also manages one machine-local drift timer/service pair on Friday, which is
-auxiliary to the four-review-timer contract. The workspace timers are
-`factory-review-plan-vs-built`, `factory-review-find-stubs`, and `factory-review-repo-hygiene`;
-they read `workspaces.txt` as described below. `factory-review-memory-tool` runs independently
-of that list, and `factory-review-installed-drift` checks this checkout's installed-skill drift.
+The workspace timers are `factory-review-plan-vs-built`, `factory-review-find-stubs`, and
+`factory-review-repo-hygiene`; they read `workspaces.txt` as described below.
+`factory-review-memory-tool` runs independently of that list. The auxiliary
+`factory-review-installed-drift` checks this checkout's installed-skill drift.
 Each row installs the named `.timer`, its paired `.service`, and a runner script under
 `~/.config/factory-review/`:
 
-| Timer | Service | Schedule | Action |
-|-------|---------|----------|--------|
-| `factory-review-plan-vs-built.timer` | `factory-review-plan-vs-built.service` | Mon 02:00 | `plan-vs-built` |
-| `factory-review-find-stubs.timer` | `factory-review-find-stubs.service` | Tue 02:00 | `find-stubs` |
-| `factory-review-repo-hygiene.timer` | `factory-review-repo-hygiene.service` | Wed 02:00 | `repo-hygiene` |
-| `factory-review-memory-tool.timer` | `factory-review-memory-tool.service` | Thu 02:00 | `memory-tool check` |
-| `factory-review-installed-drift.timer` | `factory-review-installed-drift.service` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
+| Role | Timer | Service | Schedule | Action |
+|------|-------|---------|----------|--------|
+| Required | `factory-review-plan-vs-built.timer` | `factory-review-plan-vs-built.service` | Mon 02:00 | `plan-vs-built` |
+| Required | `factory-review-find-stubs.timer` | `factory-review-find-stubs.service` | Tue 02:00 | `find-stubs` |
+| Required | `factory-review-repo-hygiene.timer` | `factory-review-repo-hygiene.service` | Wed 02:00 | `repo-hygiene` |
+| Required | `factory-review-memory-tool.timer` | `factory-review-memory-tool.service` | Thu 02:00 | `memory-tool check` |
+| Auxiliary | `factory-review-installed-drift.timer` | `factory-review-installed-drift.service` | Fri 02:00 | installed-skill drift (`scripts/check-installed.sh`) |
 
 ### What gets installed
 
@@ -392,14 +393,18 @@ activation commands below later from a login session with a user bus. The instal
 `/bin/bash` exists. Each runner prepends `$HOME/.local/bin:$HOME/.cargo/bin` to `PATH` so
 user-installed commands are found under systemd.
 
-The generated files are:
+For each unit name `N`, a real install generates these paths:
 
 ```text
 ~/.config/factory-review/workspaces.txt
-~/.config/factory-review/factory-review-*.sh
-~/.config/systemd/user/factory-review-*.service
-~/.config/systemd/user/factory-review-*.timer
+~/.config/factory-review/N.sh
+~/.config/systemd/user/N.service
+~/.config/systemd/user/N.timer
 ```
+
+Here `N` is each of the four required unit names plus the auxiliary
+`factory-review-installed-drift` name. The workspace list is the only generated path that is
+not removed by `--uninstall`.
 
 Services are `Type=oneshot` units with a 30-minute timeout and `Nice=10`; output goes to the
 user journal. Timers use `Persistent=true`, so a missed scheduled run is considered when the
@@ -414,7 +419,8 @@ The three workspace-review service files are thin wrappers around the checked-in
 systemd lifecycle generation and the separate host checks in their own runners.
 
 The installer creates `~/.config/factory-review/workspaces.txt` with comments if it does not
-exist. Put one workspace path on each line; for example:
+exist. Before relying on the three workspace timers, edit that file and put one workspace path
+on each line; for example:
 
 ```text
 # Absolute paths are accepted.
@@ -443,9 +449,13 @@ set, otherwise `$HOME/jeds-curated-skills`; when that default is not a workspace
 falls back to the checkout from which the installer was run if that checkout has `.needle.yaml`
 and `.beads`.
 
-On failure, the runner prints only the exit status and attempts to file one safe failure bead;
-it never forwards `memory-tool`'s diagnostics to the journal or bead description. It reads
-`bead_cli.backend` from the selected workspace's `.needle.yaml`:
+The memory check has two important outcomes. On success (exit 0), it prints
+`memory-tool check passed; nothing to file.` and `No bead needed.`, exits successfully, and
+creates no bead. On failure (a nonzero exit), it prints only the status and, when the selected
+workspace has a supported backend and CLI, files or reuses exactly one safe failure bead for
+the check; the service still returns the original nonzero check status. It never forwards
+`memory-tool` diagnostics to the journal or bead description. It reads `bead_cli.backend` from
+the selected workspace's `.needle.yaml`:
 
 - `bead-rs` (or `bead`) invokes `bead create --issue-type task` with the stable
   `factory-review:memory-tool-check` unique reference, so repeated failures are idempotent.
@@ -454,12 +464,11 @@ it never forwards `memory-tool`'s diagnostics to the journal or bead description
 
 Both paths use the `factory-review` and `memory-tool` labels. On a successful filing the runner
 prints only the returned bead identifier; a bead-rs replay reports that the existing bead was
-reused, and a legacy `bf` replay reports that an open duplicate already exists. A successful
-check prints `memory-tool check passed; nothing to file.` followed by an explicit `No bead
-needed.` result. If the check fails but the selected workspace has no bead store/backend, has an
-unsupported backend, or lacks the selected CLI on `PATH`, it prints an explicit `nothing to file`
-or `unable to file bead` outcome and returns the original check's failure code. A filing failure
-also preserves that check code; it never turns a failed check into a false success.
+reused, and a legacy `bf` replay reports that an open duplicate already exists. If the check
+fails but the selected workspace has no bead store/backend, has an unsupported backend, or lacks
+the selected CLI on `PATH`, it prints an explicit `nothing to file` or `unable to file bead`
+outcome and creates no bead. A filing failure also preserves the original check code; it never
+turns a failed check into a false success.
 
 The installed-drift timer is machine-local rather than per-workspace: it runs
 `scripts/check-installed.sh` once a week from this checkout, including the full skill sweep and
@@ -515,16 +524,16 @@ systemctl --user start factory-review-plan-vs-built.service
 the drift timer intentionally remains failed after exit 1 so its finding is visible in those
 inspections.
 
-Preview generation without creating the config directory, unit files, runner scripts, or
-systemd state:
+`./scripts/install-review-timers.sh` is the real, idempotent installation. To preview the
+generated units and commands without creating the config directory, unit files, runner scripts,
+or changing systemd state, use `--dry-run`:
 
 ```bash
 ./scripts/install-review-timers.sh --dry-run
 ```
 
-The installer accepts no option for a normal install, `--dry-run` to preview, `--uninstall` to
-remove its generated units, and `--help` (or `-h`) to print usage. An unknown option exits with
-an error and the usage text.
+The installer accepts `--dry-run` to preview, `--uninstall` to remove its generated units, and
+`--help` (or `-h`) to print usage. An unknown option exits with an error and the usage text.
 
 Remove only the timers, services, and runner scripts owned by this installer with:
 
