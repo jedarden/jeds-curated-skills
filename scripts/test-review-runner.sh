@@ -22,6 +22,7 @@ CONFIG="$HOME_DIR/.config/factory-review/workspaces.txt"
 CLAUDE_LOG="$BASE/claude.log"
 CLAUDE_ARGS_LOG="$BASE/claude-args.log"
 CLAUDE_PATH_LOG="$BASE/claude-path.log"
+CLAUDE_SKILL_LOG="$BASE/claude-skill.log"
 BEAD_LOG="$BASE/bead.log"
 BEAD_CREATED="$BASE/bead-created.log"
 BEAD_SEEN="$BASE/bead-seen.log"
@@ -47,6 +48,16 @@ printf '%s\n' "${PWD:?}" >>"${REVIEW_RUNNER_CLAUDE_LOG:?}"
 printf '%q ' "$@" >>"${REVIEW_RUNNER_CLAUDE_ARGS_LOG:?}"
 printf '\n' >>"${REVIEW_RUNNER_CLAUDE_ARGS_LOG:?}"
 printf '%s\n' "${PATH:?}" >>"${REVIEW_RUNNER_CLAUDE_PATH_LOG:?}"
+skill=""
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == --print ]]; then
+    skill="$arg"
+    break
+  fi
+  previous="$arg"
+done
+printf '%s\n' "$skill" >>"${REVIEW_RUNNER_CLAUDE_SKILL_LOG:?}"
 if [[ "${REVIEW_RUNNER_CLAUDE_MODE:-clean}" == findings ]]; then
   printf '%s\n' \
     'FACTORY_REVIEW_FINDING: first fixture finding' \
@@ -120,6 +131,7 @@ run_child() {
     REVIEW_RUNNER_CLAUDE_LOG="$CLAUDE_LOG" \
     REVIEW_RUNNER_CLAUDE_ARGS_LOG="$CLAUDE_ARGS_LOG" \
     REVIEW_RUNNER_CLAUDE_PATH_LOG="$CLAUDE_PATH_LOG" \
+    REVIEW_RUNNER_CLAUDE_SKILL_LOG="$CLAUDE_SKILL_LOG" \
     REVIEW_RUNNER_BEAD_LOG="$BEAD_LOG" \
     REVIEW_RUNNER_BEAD_CREATED="$BEAD_CREATED" \
     REVIEW_RUNNER_BEAD_SEEN="$BEAD_SEEN" \
@@ -144,6 +156,7 @@ printf '\n   \n# ignored\n%s\n%s\n' "$FIRST_WORKSPACE" "$SECOND_WORKSPACE" >"$CO
 : >"$CLAUDE_LOG"
 : >"$CLAUDE_ARGS_LOG"
 : >"$CLAUDE_PATH_LOG"
+: >"$CLAUDE_SKILL_LOG"
 : >"$BEAD_SEEN"
 : >"$BEAD_CREATED"
 : >"$BF_CREATED"
@@ -166,6 +179,13 @@ $SECOND_WORKSPACE"
 [[ "$(<"$CLAUDE_LOG")" == "$expected_order" ]]
 assert_count 6 "$CLAUDE_PATH_LOG"
 assert_count 6 <(grep -F '/run/current-system/sw/bin' "$CLAUDE_PATH_LOG")
+expected_skills="/plan-vs-built
+/plan-vs-built
+/find-stubs
+/find-stubs
+/repo-hygiene
+/repo-hygiene"
+[[ "$(<"$CLAUDE_SKILL_LOG")" == "$expected_skills" ]]
 [[ ! -s "$BEAD_LOG" ]]
 
 # Malformed entries are reported and skipped explicitly. Shell-looking path
