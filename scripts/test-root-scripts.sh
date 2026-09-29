@@ -719,18 +719,31 @@ test_review_timer_contracts() {
   expect_exit 0 "review-timer install exits 0" run_review_timer_install
 
   local unit_dir="$REVIEW_TIMER_HOME/.config/systemd/user"
-  local unit_names=(
+  # The first four entries are the installer contract owned by this fixture.
+  # Keep the auxiliary drift unit separate so a change to that machine-local
+  # check cannot silently change the required review surface.
+  local required_units=(
     factory-review-plan-vs-built
     factory-review-find-stubs
     factory-review-repo-hygiene
     factory-review-memory-tool
-    factory-review-installed-drift
   )
-  local schedules=(
+  local required_skills=(
+    plan-vs-built
+    find-stubs
+    repo-hygiene
+    memory-tool
+  )
+  local required_schedules=(
     'Mon 02:00'
     'Tue 02:00'
     'Wed 02:00'
     'Thu 02:00'
+  )
+  local auxiliary_units=(factory-review-installed-drift)
+  local unit_names=("${required_units[@]}" "${auxiliary_units[@]}")
+  local schedules=(
+    "${required_schedules[@]}"
     'Fri 02:00'
   )
   local workspace_units=(
@@ -739,18 +752,11 @@ test_review_timer_contracts() {
     factory-review-repo-hygiene
   )
   local workspace_skills=(plan-vs-built find-stubs repo-hygiene)
-  # The first four are the focused contract: three workspace-list review
-  # pairs plus the independent memory-tool pair. The installed-drift pair is
-  # an existing machine-local auxiliary owner of this same installer; keep it
-  # in the complete set so an unlisted owned unit cannot silently appear.
-  local core_units=(
-    factory-review-plan-vs-built
-    factory-review-find-stubs
-    factory-review-repo-hygiene
-    factory-review-memory-tool
-  )
-  local auxiliary_units=(factory-review-installed-drift)
+  # Alias the required set at the point where the complete owned set is
+  # checked, making the four-unit boundary visible in every contract block.
+  local core_units=("${required_units[@]}")
   local owned_units=("${core_units[@]}" "${auxiliary_units[@]}")
+  local required_environment='Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin'
   local unit service timer unit_runner snapshot_dir i declared_units
 
   expect_ok "review-timer installer passes bash syntax" \
@@ -816,7 +822,7 @@ test_review_timer_contracts() {
     assert_review_timer_field "$unit service has the shared timeout" 'TimeoutSec=30min' "$service"
     assert_review_timer_field "$unit service has Nice=10" 'Nice=10' "$service"
     assert_review_timer_field "$unit service has the system PATH" \
-      'Environment=PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin' \
+      "$required_environment" \
       "$service"
     assert_review_timer_field "$unit service runs from the home directory" \
       'WorkingDirectory=%h' "$service"
@@ -836,6 +842,22 @@ test_review_timer_contracts() {
     cp "$service" "$snapshot_dir/$unit.service"
     cp "$timer" "$snapshot_dir/$unit.timer"
     cp "$unit_runner" "$snapshot_dir/$unit.sh"
+  done
+
+  # Pin the four required name-to-skill-to-slot mappings independently from
+  # the complete five-unit lifecycle. This is the implementation contract:
+  # every required pair has the shared service environment, its weekly slot,
+  # and the action named by the unit.
+  for i in "${!required_units[@]}"; do
+    unit="${required_units[$i]}"
+    service="$unit_dir/$unit.service"
+    timer="$unit_dir/$unit.timer"
+    assert_review_timer_field "$unit service names its required action" \
+      "Description=Factory Review: ${required_skills[$i]} skill" "$service"
+    assert_review_timer_field "$unit service carries the required environment" \
+      "$required_environment" "$service"
+    assert_review_timer_field "$unit timer owns its required weekly slot" \
+      "OnCalendar=${required_schedules[$i]}" "$timer"
   done
 
   # The three workspace-list timers share the same generated runner contract:
@@ -972,19 +994,34 @@ test_review_timer_contracts() {
   cp "$REVIEW_TIMER_SYSTEMCTL_STATE" "$dry_systemctl_state"
   capture_review_timer_dry_run "$dry_home"
   assert_review_timer_dry_rc 0 "review-timer dry-run exits 0"
-  for i in "${!workspace_units[@]}"; do
-    unit="${workspace_units[$i]}"
+  local dry_target
+  for i in "${!required_units[@]}"; do
+    unit="${required_units[$i]}"
+    dry_target="$dry_home/.config/systemd/user/$unit.service"
+    expect_ok "dry-run prints exact $unit service target" grep -qF \
+      "$dry_target" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    dry_target="$dry_home/.config/systemd/user/$unit.timer"
+    expect_ok "dry-run prints exact $unit timer target" grep -qF \
+      "$dry_target" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    dry_target="$dry_home/.config/factory-review/$unit.sh"
+    expect_ok "dry-run prints exact $unit runner target" grep -qF \
+      "$dry_target" <<<"$REVIEW_TIMER_DRY_OUTPUT"
     expect_ok "dry-run prints $unit service" grep -qF \
       "$unit.service" <<<"$REVIEW_TIMER_DRY_OUTPUT"
     expect_ok "dry-run prints $unit timer" grep -qF \
       "$unit.timer" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+    expect_ok "dry-run prints $unit weekly schedule" grep -qF \
+      "OnCalendar=${required_schedules[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
+  done
+  for i in "${!workspace_units[@]}"; do
+    unit="${workspace_units[$i]}"
     expect_ok "dry-run prints $unit skill command" grep -qF \
       "factory-review-workspace.sh\" \"${workspace_skills[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
     expect_ok "dry-run prints the workspace-review child" grep -qF \
       'factory-review-workspace.sh' <<<"$REVIEW_TIMER_DRY_OUTPUT"
-    expect_ok "dry-run prints $unit weekly schedule" grep -qF \
-      "OnCalendar=${schedules[$i]}" <<<"$REVIEW_TIMER_DRY_OUTPUT"
   done
+  expect_ok "dry-run prints the memory-tool runner command target" grep -qF \
+    'factory-review-memory-tool.sh' <<<"$REVIEW_TIMER_DRY_OUTPUT"
   expect_ok "dry-run prints generated service settings" grep -qF \
     'Type=oneshot' <<<"$REVIEW_TIMER_DRY_OUTPUT"
   expect_ok "dry-run prints the generous timeout" grep -qF \
