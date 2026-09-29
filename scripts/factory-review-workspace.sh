@@ -25,7 +25,11 @@ case "$SKILL_NAME" in
     ;;
 esac
 
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+# Keep the child self-contained when it is invoked directly as well as through
+# the generated systemd wrapper. The system path provides the Nix-installed
+# claude command; the user paths provide the configured bead backend. Preserve
+# the user-path precedence used by direct invocations and fixtures.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/run/current-system/sw/bin:$PATH"
 WORKSPACES_CONFIG="${FACTORY_REVIEW_WORKSPACES_FILE:-$HOME/.config/factory-review/workspaces.txt}"
 
 # The skill reports findings only. The runner owns the output boundary and
