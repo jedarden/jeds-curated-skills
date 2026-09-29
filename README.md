@@ -354,10 +354,16 @@ cd ~/jeds-curated-skills
 ./scripts/install-review-timers.sh
 ```
 
-The four required review timers are three weekly workspace-review timers and one weekly host
-memory check, staggered across Monday through Thursday. The installer also manages one
-machine-local drift timer on Friday, which is auxiliary to the four-review-timer contract. The
-workspace timers are
+The four required review timer/service pairs are three weekly workspace-review pairs and one
+weekly host memory-check pair, staggered across Monday through Thursday:
+
+- `factory-review-plan-vs-built.timer` / `factory-review-plan-vs-built.service`
+- `factory-review-find-stubs.timer` / `factory-review-find-stubs.service`
+- `factory-review-repo-hygiene.timer` / `factory-review-repo-hygiene.service`
+- `factory-review-memory-tool.timer` / `factory-review-memory-tool.service`
+
+The installer also manages one machine-local drift timer/service pair on Friday, which is
+auxiliary to the four-review-timer contract. The workspace timers are
 `factory-review-plan-vs-built`, `factory-review-find-stubs`, and `factory-review-repo-hygiene`;
 they read `workspaces.txt` as described below. `factory-review-memory-tool` runs independently
 of that list, and `factory-review-installed-drift` checks this checkout's installed-skill drift.
