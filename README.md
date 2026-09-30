@@ -24,7 +24,17 @@ cd ~/jeds-curated-skills
 
 # Install everything
 ./install.sh --all
+
+# Remove one or more installed skills
+./install.sh --remove usage-statusline
 ```
+
+`--remove` deletes only the named skill. For `usage-statusline`, it also
+deletes `~/.claude/usage-statusline.sh` and removes the installer-owned
+`statusLine` entry from `~/.claude/settings.json` while preserving unrelated
+settings and any different statusline command. Re-running removal is safe.
+The same command works from the direct-clone layout and removes the named
+skill directory from that clone.
 
 **Or** clone directly to your Claude Code skills directory (overwrites existing skills):
 

@@ -18,6 +18,8 @@
 #                  leaves other installed skills untouched; a repeated install
 #                  is byte-identical
 #     --all        installs every skill --list reports
+#     --remove    removes named skills, leaves siblings untouched, and makes
+#                 check-installed.sh report the removed state cleanly
 #     shared-lib skills install self-contained, runnable scripts: their
 #     inlined helpers do not depend on a lib/ sibling in ~/.claude/skills/
 #
@@ -1693,6 +1695,23 @@ test_install_contracts() {
   expect_ok "failed install created nothing" \
     test ! -e "$FAKE_SKILLS/definitely-not-a-skill"
 
+  # Removal is selective and idempotent from the checker's perspective.
+  expect_exit 0 "--remove exits 0" run_install --remove "$FIXTURE_SKILL"
+  expect_ok "--remove deletes the selected skill" \
+    test ! -e "$FAKE_SKILLS/$FIXTURE_SKILL"
+  expect_ok "--remove preserves the unrelated sibling" \
+    test "$(snapshot_tree "$FAKE_SKILLS/$SIBLING_SKILL")" = "$sibling_snapshot"
+  local removed_output
+  removed_output="$(run_check_installed "$FIXTURE_SKILL")"
+  expect_ok "removed skill is clean in check-installed.sh" \
+    grep -q "removed state is clean" <<< "$removed_output"
+
+  # An unknown removal fails without touching the fake skills directory.
+  expect_exit 1 "unknown skill removal → 1" \
+    run_install --remove definitely-not-a-skill
+  expect_ok "failed removal created nothing" \
+    test ! -e "$FAKE_SKILLS/definitely-not-a-skill"
+
   # --all installs every skill --list reported.
   local expected_skills missing=""
   expected_skills="$(run_install --list | sed -n 's/^  - //p')"
@@ -1861,6 +1880,14 @@ test_statusline_contracts() {
     jq -e '.statusLine.command == "cat /tmp/other.sh" and .theme == "dark"' \
       "$FAKE_HOME/.claude/settings.json"
 
+  expect_exit 0 "direct-clone usage-statusline removal exits 0" \
+    env HOME="$FAKE_HOME" bash "$FAKE_SKILLS/install.sh" --remove usage-statusline
+  expect_ok "direct-clone removal deletes the selected skill" \
+    test ! -e "$FAKE_SKILLS/usage-statusline"
+  expect_ok "direct-clone removal preserves the foreign statusLine" \
+    jq -e '.statusLine.command == "cat /tmp/other.sh" and .theme == "dark"' \
+      "$FAKE_HOME/.claude/settings.json"
+
   # Non-destructive: invalid JSON is reported (exit 1) and left byte-identical.
   new_fake_home
   printf '{ this is not json' > "$FAKE_HOME/.claude/settings.json"
@@ -1868,6 +1895,50 @@ test_statusline_contracts() {
   expect_exit 1 "install against invalid settings.json → 1" run_install usage-statusline
   expect_ok "invalid settings.json left byte-identical" \
     cmp -s "$FAKE_HOME/settings.before" "$FAKE_HOME/.claude/settings.json"
+  new_fake_home
+  expect_exit 0 "usage-statusline install before invalid removal exits 0" run_install usage-statusline
+  printf '{ this is not json' > "$FAKE_HOME/.claude/settings.json"
+  cp "$FAKE_HOME/.claude/settings.json" "$FAKE_HOME/settings.before-remove"
+  expect_exit 1 "removal against invalid settings.json → 1" \
+    run_install --remove usage-statusline
+  expect_ok "invalid settings.json blocks partial removal" \
+    cmp -s "$FAKE_HOME/settings.before-remove" "$FAKE_HOME/.claude/settings.json"
+  expect_ok "invalid removal leaves the skill installed" \
+    test -d "$FAKE_SKILLS/usage-statusline"
+  expect_ok "invalid removal leaves the runtime copy installed" \
+    test -f "$FAKE_HOME/.claude/usage-statusline.sh"
+
+  # Removal deletes only the installer-owned statusLine and deployed copy,
+  # preserving unrelated settings. A foreign statusLine is never displaced.
+  new_fake_home
+  expect_exit 0 "usage-statusline install for removal exits 0" run_install usage-statusline
+  expect_ok "usage-statusline removal fixture has a deployed copy" \
+    test -f "$FAKE_HOME/.claude/usage-statusline.sh"
+  jq '.model = "opus" | .permissions = {allow: ["Bash(ls)"]}' \
+    "$FAKE_HOME/.claude/settings.json" > "$FAKE_HOME/settings.with-user-keys"
+  mv "$FAKE_HOME/settings.with-user-keys" "$FAKE_HOME/.claude/settings.json"
+  expect_exit 0 "usage-statusline --remove exits 0" \
+    run_install --remove usage-statusline
+  expect_ok "usage-statusline skill directory removed" \
+    test ! -e "$FAKE_SKILLS/usage-statusline"
+  expect_ok "usage-statusline runtime copy removed" \
+    test ! -e "$FAKE_HOME/.claude/usage-statusline.sh"
+  expect_ok "installer-owned statusLine removed and user keys preserved" \
+    jq -e '.statusLine == null and .model == "opus" and .permissions.allow == ["Bash(ls)"]' \
+      "$FAKE_HOME/.claude/settings.json"
+  expect_exit 0 "removed usage-statusline is clean in check-installed.sh" \
+    run_check_installed usage-statusline
+
+  new_fake_home
+  printf '{"statusLine":{"type":"command","command":"cat /tmp/other.sh"},"theme":"dark"}' \
+    > "$FAKE_HOME/.claude/settings.json"
+  expect_exit 0 "foreign statusLine install for removal exits 0" run_install usage-statusline
+  expect_exit 0 "foreign statusLine removal exits 0" run_install --remove usage-statusline
+  expect_ok "foreign statusLine survives removal" \
+    jq -e '.statusLine.command == "cat /tmp/other.sh" and .theme == "dark"' \
+      "$FAKE_HOME/.claude/settings.json"
+  expect_ok "foreign statusLine removal still deletes deployed copy" \
+    test ! -e "$FAKE_HOME/.claude/usage-statusline.sh"
 
   # Drift in the deployed copy is drift, even with no skills-dir install —
   # the live machine's shape, where ADR-1's hardcoded path hid. Named check,

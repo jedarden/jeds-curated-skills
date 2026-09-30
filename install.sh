@@ -4,6 +4,7 @@
 #   ./install.sh <skill-name> [<skill-name>...]   # Install specific skills
 #   ./install.sh --all                             # Install every skill
 #   ./install.sh --list                            # List available skills
+#   ./install.sh --remove <skill-name> [...]       # Remove installed skills
 
 set -euo pipefail
 
@@ -177,6 +178,93 @@ install_statusline() {
     echo -e "${GREEN}✓ Wired statusLine into $settings (takes effect in new sessions)${NC}"
 }
 
+# Remove usage-statusline's out-of-tree runtime copy and undo only the
+# statusLine block previously installed by this script. Other settings and a
+# statusLine that runs something else are left untouched.
+remove_statusline() {
+    local dest="$HOME/.claude/usage-statusline.sh"
+    local settings="$HOME/.claude/settings.json"
+    local cmd="/bin/bash $dest"
+
+    if [[ -f "$settings" ]]; then
+        if ! command -v jq >/dev/null 2>&1; then
+            echo -e "${RED}Error: jq not found — could not inspect $settings safely${NC}"
+            return 1
+        fi
+
+        if ! jq -e . "$settings" >/dev/null 2>&1; then
+            echo -e "${RED}Error: $settings is not valid JSON — leaving it untouched${NC}"
+            return 1
+        fi
+
+        if jq -e --arg cmd "$cmd" \
+            '(.statusLine? | objects | .command?) == $cmd' \
+            "$settings" >/dev/null; then
+            local tmp mode
+            tmp=$(mktemp "${settings}.XXXXXX")
+            if ! jq --arg cmd "$cmd" \
+                'if ((.statusLine? | objects | .command?) == $cmd) then del(.statusLine) else . end' \
+                "$settings" > "$tmp"; then
+                rm -f "$tmp"
+                echo -e "${RED}Error: failed to remove statusLine from $settings${NC}"
+                return 1
+            fi
+            mode=$(stat -c '%a' "$settings")
+            chmod "$mode" "$tmp"
+            mv -f "$tmp" "$settings"
+            echo -e "${GREEN}✓ Removed installer-owned statusLine from $settings${NC}"
+        else
+            echo -e "${YELLOW}⚠ $settings has no statusLine owned by usage-statusline — leaving it untouched${NC}"
+        fi
+    fi
+
+    if [[ -e "$dest" ]]; then
+        rm -f "$dest"
+        echo -e "${GREEN}✓ Removed $dest${NC}"
+    else
+        echo -e "${GREEN}✓ $dest is already absent${NC}"
+    fi
+}
+
+# Return success only for a name shown by --list. Removal is deliberately
+# narrower than installation so an accidental path-like argument can never
+# turn rm -rf into a broad delete.
+is_available_skill() {
+    local requested="$1" skill
+    while IFS= read -r skill; do
+        if [[ "$skill" == "$requested" ]]; then
+            return 0
+        fi
+    done < <(list_available_skills)
+    return 1
+}
+
+# Remove a single installed skill.
+remove_skill() {
+    local skill_name="$1"
+    local dest_dir="$TARGET_DIR/$skill_name"
+
+    if ! is_available_skill "$skill_name"; then
+        echo -e "${RED}Error: Skill '$skill_name' not found in repository${NC}"
+        return 1
+    fi
+
+    # Clean the out-of-tree artifact before removing a direct-clone source
+    # directory: once the skill is gone, its source script is unavailable.
+    if [[ "$skill_name" == "usage-statusline" ]]; then
+        if ! remove_statusline; then
+            return 1
+        fi
+    fi
+
+    if [[ -d "$dest_dir" ]]; then
+        rm -rf "$dest_dir"
+        echo -e "${GREEN}✓ Removed $skill_name from $dest_dir${NC}"
+    else
+        echo -e "${GREEN}✓ $skill_name is already absent from $dest_dir${NC}"
+    fi
+}
+
 # Inline lib/common.sh into scripts that source it
 # This makes installed scripts self-contained (no dependency on ../../lib/)
 inline_lib_common() {
@@ -231,6 +319,7 @@ idempotent, and existing settings.json keys are never overwritten.
 Options:
   --all              Install every skill from this repository
   --list, -l         List all available skills
+  --remove <skill>   Remove one or more installed skills
   --help, -h         Show this help message
 
 Arguments:
@@ -241,6 +330,8 @@ Examples:
   $0 plan-review repo-hygiene       # Install multiple skills
   $0 --all                          # Install everything
   $0 --list                         # See what's available
+  $0 --remove plan-review           # Remove one skill
+  $0 --remove plan-review adr        # Remove multiple skills
 
 EOF
 }
@@ -284,6 +375,29 @@ main() {
                 echo -e "${GREEN}✓ All skills installed successfully${NC}"
             else
                 echo -e "${RED}✗ Some skills failed to install${NC}"
+                exit 1
+            fi
+            ;;
+        --remove)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --remove requires at least one skill name" >&2
+                show_usage >&2
+                exit 2
+            fi
+
+            local failed=0
+            shift
+            for skill in "$@"; do
+                if ! remove_skill "$skill"; then
+                    failed=1
+                fi
+            done
+
+            echo ""
+            if [[ $failed -eq 0 ]]; then
+                echo -e "${GREEN}✓ Removal complete${NC}"
+            else
+                echo -e "${RED}✗ Some skills failed to remove${NC}"
                 exit 1
             fi
             ;;

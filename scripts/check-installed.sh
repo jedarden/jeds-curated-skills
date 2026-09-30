@@ -96,7 +96,7 @@ for skill in "${SKILLS_TO_CHECK[@]}"; do
   fi
 
   if [[ ! -d "$installed_dir" ]]; then
-    echo -e "${YELLOW}Warning: Skill '$skill' not installed at ~/.claude/skills/$skill${NC}"
+    echo -e "${GREEN}✓ Skill '$skill' is not installed (removed state is clean)${NC}"
     continue
   fi
 
