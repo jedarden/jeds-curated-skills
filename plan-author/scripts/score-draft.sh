@@ -81,6 +81,24 @@ check "12.2 Plan B"                  "plan b" "fallback" "if .* proves false" "a
 check "13.1 Open Questions"          "open question" "resolve by" "owner:"
 check "13.2 Revision history"        "revision history" "last updated" "initial draft"
 
+# Type-specific authoring controls. These are conditional so the historical 36-check score for
+# Greenfield/Port/Improvement/Integration fixtures remains stable, while Migration / Cutover and
+# Spike drafts cannot report COMPLETE without the criteria that plan-review judges.
+if grep -qiE '^\*\*Type:\*\*[[:space:]]*(Migration|Cutover)' "$FILE"; then
+  check "M.1 Backup and restore rehearsal"          "backup.*restore.*rehears" "restore.*rehears.*backup"
+  check "M.2 Idempotent and resumable steps"        "idempotent.*resum" "resum.*idempotent"
+  check "M.3 Shadow/canary and diff oracle"         "shadow.*canary.*diff" "canary.*shadow.*diff" "shadow.*diff.*oracle"
+  check "M.4 Cutover gate and rollback trigger"     "cutover.*gate.*rollback.*trigger" "rollback.*trigger.*cutover.*gate"
+  check "M.5 Post-cutover validation and retirement" "post.cutover.*validat.*retir" "retir.*post.cutover.*validat"
+elif grep -qiE '^\*\*Type:\*\*[[:space:]]*Spike' "$FILE"; then
+  check "S.1 Measurable question"                  "question.*measurement" "measurement.*question"
+  check "S.2 Metrics and thresholds"               "metrics.*threshold" "threshold.*metrics"
+  check "S.3 Environment"                          "environment"
+  check "S.4 Time box and decide-by gate"          "time.?box.*decide.?by" "decide.?by.*time.?box"
+  check "S.5 Decision record in informed plan"     "decision.*record.*plan" "plan.*decision.*record"
+  check "S.6 Default if inconclusive"              "default.*inconclusive" "inconclusive.*default"
+fi
+
 TOTAL=$((PASS + FAIL))
 PCT=$((PASS * 100 / TOTAL))
 

@@ -17,7 +17,7 @@
 #   plan-review        find-forks.sh    pinned summary counts + zero-hit + usage
 #   plan-review        scan-headers.sh  header census + section verdicts + stats + usage
 #   spec-review        score-spec.sh    fixtures 6/13, 13/13, 0/13 + usage
-#   plan-author        score-draft.sh   30/36 + exact backfill list + thin + usage
+#   plan-author        score-draft.sh   30/36 + conditional M/S controls + thin + usage
 #   readme-review      score-readme.sh  12/14 + type ladder + placeholder + usage
 #   api-design-review  scan-api.sh      4-style inventory + edge cases + usage
 #   test-plan-review   scan-tests.sh    inventory counts + prune + frameworks + usage
@@ -559,6 +559,32 @@ EOF
   MISSING: 9.2 Measurement method
   MISSING: 12.2 Plan B
   MISSING: 13.2 Revision history'
+
+  cat "$w/draft.md" > "$w/migration.md"
+  cat >> "$w/migration.md" <<'EOF'
+
+**Type:** Migration / Cutover
+## Type-Specific Requirements
+Backup and restore rehearsal; idempotent and resumable steps; shadow/canary with a diff oracle;
+cutover gate and rollback trigger; post-cutover validation and old-path retirement.
+EOF
+  run_capture bash "$sc" "$w/migration.md"
+  assert_rc 0 "migration conditional fixture exits 0"
+  assert_has "migration score includes five controls" "Score: 35 / 41 (85%)"
+  assert_not_has "migration has no missing M controls" "MISSING: M."
+
+  cat "$w/draft.md" > "$w/spike.md"
+  cat >> "$w/spike.md" <<'EOF'
+
+**Type:** Spike
+## Type-Specific Requirements
+Question answerable by a measurement; metrics and thresholds; environment; time box and decide-by
+gate; decision record in the informed plan; default if inconclusive.
+EOF
+  run_capture bash "$sc" "$w/spike.md"
+  assert_rc 0 "spike conditional fixture exits 0"
+  assert_has "spike score includes six controls" "Score: 36 / 42 (85%)"
+  assert_not_has "spike has no missing S controls" "MISSING: S."
 
   printf '# Plan\n\nWe will build a thing.\n' > "$w/thin.md"
   run_capture bash "$sc" "$w/thin.md"

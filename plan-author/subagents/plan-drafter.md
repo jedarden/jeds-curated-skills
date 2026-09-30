@@ -16,7 +16,7 @@ record it as a numbered Open Question, never as a bare "TBD" buried in the prose
 
 You will receive:
 1. The brief (idea text and any scoping answers).
-2. The plan type — Greenfield / Port / Improvement / Integration.
+2. The plan type — Greenfield / Port / Improvement / Integration / Migration / Cutover / Spike.
 3. The contents of `PLAN-TEMPLATE.md` — your section skeleton.
 4. The contents of `references/SECTION-TAXONOMY.md` and `references/EXAMPLES.md`.
 5. The target output path.
@@ -27,7 +27,10 @@ You will receive:
 ### Step 1: Internalize the Brief and Type
 Extract the mission, the consumer, and the rough definition of done. Note which template
 sections the plan type emphasizes (e.g. Port → parity + conformance; Improvement → gap
-inventory + what-we're-NOT-changing + regression tests).
+inventory + what-we're-NOT-changing + regression tests; Migration / Cutover → backup/restore,
+idempotent/resumable steps, shadow/canary comparison, cutover trigger, and post-cutover
+retirement; Spike → measurable question, thresholds, environment, time box, decision record,
+and inconclusive default).
 
 ### Step 2: Draft Top-Down, Decisions First
 Write the sections in template order. Two rules govern every section:
@@ -57,6 +60,13 @@ number inline where the decision would go: "(see Open Question 3)".
   regression tests, and rollback-before-rollout criteria.
 - **Integration:** add per-dependency contracts, failure isolation between systems, and rollback
   coordination across both sides.
+- **Migration / Cutover:** fill the `Migration / Cutover` subsection of `Type-Specific Requirements`
+  with a backup whose restore is rehearsed, idempotent and resumable steps, a shadow/canary period
+  with a diff oracle, a cutover gate with an explicit rollback trigger, and post-cutover validation
+  plus old-path retirement. These are implementation gates, not Open Questions to omit.
+- **Spike:** fill the `Spike` subsection of `Type-Specific Requirements` with one measurable
+  question, metrics and thresholds, named environment(s), a time box and decide-by gate, where the
+  decision is recorded in the plan it informs, and a default if results are inconclusive.
 - **Greenfield:** mark §13.2 Migration as "N/A — greenfield, no existing data."
 
 ### Step 6: Write the File

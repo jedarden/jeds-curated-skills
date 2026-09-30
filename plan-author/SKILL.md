@@ -5,8 +5,8 @@ description: >-
   Generate a high-quality plan.md from a short brief or idea. Produces the eleven structural
   categories a plan-review checks for — scope lock, acceptance scenarios, architecture, pre-flight
   safety, phasing, testing, security, performance, operations, API, and risk — so the draft would
-  pass review on the first pass. Use when starting a new project, port, improvement, or integration
-  and you need a complete plan rather than a blank page.
+  pass review on the first pass. Use when starting a new project, port, improvement, integration,
+  migration/cutover, or spike and you need a complete plan rather than a blank page.
 argument-hint: "[brief text | path/to/brief.md] [--out path/to/plan.md]"
 allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
@@ -16,7 +16,8 @@ allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 Turn a short brief into a complete `plan.md`. This skill is the inverse of `plan-review`:
 it treats the eleven plan-review categories as generative targets, so the plan it writes is
 already structured to pass a pre-flight review. The output is opinionated — it makes decisions
-and records genuine unknowns as numbered Open Questions, never as vague "TBD".
+and records genuine unknowns as numbered Open Questions, never as vague "TBD". Migration/cutover
+plans get explicit safety controls, while spikes get a bounded experiment and decision protocol.
 
 ## Step 1: Gather the Brief
 
@@ -42,9 +43,13 @@ Classify the work — this changes which sections get emphasis:
   regression tests, rollback-before-rollout)
 - **Integration** — wiring two existing systems together (emphasis: per-dependency contracts,
   failure isolation, rollback coordination)
+- **Migration / Cutover** — moving data, users, or traffic (emphasis: backup and restore rehearsal,
+  idempotent/resumable steps, shadow/canary comparison, and a named cutover rollback trigger)
+- **Spike** — an experiment whose deliverable is a decision (emphasis: question, metrics and
+  thresholds, environment, time box, decision record, and default if inconclusive)
 
 If the brief makes the type obvious, proceed. If it is genuinely ambiguous, confirm with one
-AskUserQuestion. For improvement and port plans, follow the grounding flow in
+AskUserQuestion. For improvement, port, and migration/cutover plans, follow the grounding flow in
 `~/.claude/skills/plan-author/runbooks/FROM-EXISTING-CODE.md` first — scan the real codebase
 so the plan describes what exists, not a guess.
 
@@ -52,7 +57,8 @@ so the plan describes what exists, not a guess.
 
 Read both:
 - `~/.claude/skills/plan-author/PLAN-TEMPLATE.md` — the full section skeleton for all eleven
-  categories, with guidance comments showing what "good" looks like per section.
+  categories, with guidance comments showing what "good" looks like per section and a conditional
+  type-specific control block for Migration / Cutover and Spike.
 - `~/.claude/skills/plan-author/CHECKLIST-COMPLETENESS.md` — the bar the finished plan must hit.
 
 Also load, for the drafter to reference:
@@ -80,9 +86,11 @@ After the drafter returns, score the draft against the completeness bar:
 ~/.claude/skills/plan-author/scripts/score-draft.sh <plan-file>
 ```
 For every check reported MISSING, re-read the relevant template section and write that section
-directly with the Edit tool — grounded in the plan's own components, never boilerplate. Re-run
-the script until the score is at least 90%, or until the only remaining gaps are sections that
-are legitimately not applicable to this plan type (note those inline as "N/A — <reason>").
+directly with the Edit tool — grounded in the plan's own components, never boilerplate. For a
+Migration / Cutover or Spike, the scorer adds the applicable type-specific checks; do not treat
+those controls as optional. Re-run the script until the score is at least 90%, or until the only
+remaining gaps are sections that are legitimately not applicable to this plan type (note those
+inline as "N/A — <reason>").
 
 ## Step 6: Write the File and Report
 

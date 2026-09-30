@@ -70,3 +70,25 @@ bare "TBD" does NOT pass — genuine unknowns belong in §16 Open Questions, num
 ## 13. Hygiene
 - [ ] **13.1 Open Questions** — genuine unknowns numbered, with owner + resolve-by phase.
 - [ ] **13.2 Revision history / date stamp** — plan is dated and traceable.
+
+## Type-Specific Plan Controls (conditional)
+
+Complete only the block matching the plan's `**Type:**`; the other type is not scored.
+
+### Migration / Cutover
+- [ ] **M.1 Backup and restore rehearsal** — a named backup is integrity-checked and its restore is rehearsed before any destructive step.
+- [ ] **M.2 Idempotent and resumable steps** — interrupted or repeated work has a safe checkpoint/re-run behavior.
+- [ ] **M.3 Shadow / canary and diff oracle** — a bounded comparison period and authoritative mismatch threshold are named.
+- [ ] **M.4 Cutover gate and rollback trigger** — go/no-go signals, owner, and measurable rollback trigger are explicit.
+- [ ] **M.5 Post-cutover validation and old-path retirement** — validation, observation, and retirement evidence are planned.
+
+### Spike
+- [ ] **S.1 Measurable question** — one sentence states the question a measurement can answer.
+- [ ] **S.2 Metrics and thresholds** — metrics and the thresholds that decide the outcome are named.
+- [ ] **S.3 Environment** — hardware, runtime/browser versions, and relevant data/fixtures are named.
+- [ ] **S.4 Time box and decide-by gate** — experiment duration and decision date/phase are bounded.
+- [ ] **S.5 Decision record** — results are written into the plan the spike informs, not only a research log.
+- [ ] **S.6 Default if inconclusive** — a concrete default choice is stated for an inconclusive result.
+
+The `score-draft.sh` self-score adds M.1–M.5 or S.1–S.6 when the type metadata selects that
+block. A generic 36/36 score is therefore not sufficient for either conditional plan type.

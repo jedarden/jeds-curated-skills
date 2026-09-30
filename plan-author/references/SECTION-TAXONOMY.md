@@ -49,3 +49,11 @@ Insert these where the table note points; keep the base numbering otherwise.
   under §10: `### Behavioral Regression Tests`; under §13: `### Rollback Criteria Before Rollout`.
 - **Integration** — under §6: `## Dependency Integration Contracts (per-dep)`; under §8:
   `### Failure Isolation Between Systems`; under §13: `### Rollback Coordination`.
+- **Migration / Cutover** — retain the `## Type-Specific Requirements` block from the template and
+  fill `### Migration / Cutover`: backup + restore rehearsal, idempotent/resumable steps,
+  shadow/canary + diff oracle, cutover gate + rollback trigger, and post-cutover validation + old
+  path retirement.
+- **Spike** — retain the `## Type-Specific Requirements` block from the template and fill
+  `### Spike`: measurable question, metrics + thresholds, environment, time box + decide-by gate,
+  decision record in the informed plan, and default if inconclusive. Mark unrelated base sections
+  N/A with a reason instead of padding the plan.

@@ -13,7 +13,7 @@ so `plan-review` and the scoring script can find every section.
 
 > One-line tagline. What this is, in plain words.
 
-**Type:** Greenfield | Port | Improvement | Integration
+**Type:** Greenfield | Port | Improvement | Integration | Migration / Cutover | Spike
 **Status:** Draft
 **Last updated:** <YYYY-MM-DD>
 
@@ -197,6 +197,44 @@ they are binding; in lowercase prose they are descriptive.
 
 ### 13.3 Monitoring & Health
 <What signals indicate health, and the doctor/health-check entry point.>
+
+## Type-Specific Requirements (fill the applicable subsection)
+
+<!-- guidance: Keep the base sections above for every plan. Retain and complete exactly the
+     applicable subsection below; delete the other subsection from the generated plan. These are
+     authoring gates, not optional review notes. Migration / Cutover must make every destructive
+     action recoverable. Spike must make its decision reproducible and bounded. -->
+
+### Migration / Cutover
+
+<!-- guidance: Required when **Type** is Migration / Cutover. Mirror plan-review's M.1–M.5. -->
+
+- **Backup and restore rehearsal (M.1):** <name the backup artifact, when it is taken, how its
+  integrity is checked, and the exact restore rehearsal completed before any destructive step.>
+- **Idempotent and resumable steps (M.2):** <for every migration step, state its repeat-safe key or
+  checkpoint, how an interrupted run resumes, and what duplicate/partial work does.>
+- **Shadow / canary period and diff oracle (M.3):** <name the shadow or canary duration/scope and
+  the authoritative comparison, including the threshold that blocks cutover.>
+- **Cutover gate and rollback trigger (M.4):** <name the go/no-go owner, required signals, last safe
+  abort point, and exact measurable trigger that invokes rollback.>
+- **Post-cutover validation and old-path retirement (M.5):** <list validation checks, observation
+  period, ownership transfer, and the evidence required before retiring the old path.>
+
+### Spike
+
+<!-- guidance: Required when **Type** is Spike. Mirror plan-review's S.1–S.6. Most other base
+     categories may be explicitly marked N/A with a reason rather than padded with fake design. -->
+
+- **Question (S.1):** <one sentence answerable by a measurement, including the alternatives.>
+- **Metrics and thresholds (S.2):** <name each metric, its measurement method, and the threshold
+  that selects an outcome.>
+- **Environment (S.3):** <hardware, OS, browser/runtime versions, data set, and relevant fixtures.>
+- **Time box and decide-by gate (S.4):** <duration, stop condition, and date or phase gate by which
+  the decision must be made.>
+- **Decision record (S.5):** <where results are recorded and the exact section/plan that receives
+  the decision; a research log alone is insufficient.>
+- **Default if inconclusive (S.6):** <the concrete fallback choice if measurements do not cross a
+  threshold or the spike expires.>
 
 ## 14. API / Interface Design
 

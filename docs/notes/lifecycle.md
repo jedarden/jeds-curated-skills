@@ -67,8 +67,12 @@ The `plan-author` and `plan-review` skills handle these plan types:
 - **Port:** Rewrite/translation of existing codebase to new stack
 - **Improvement:** Feature addition or refactor of existing system
 - **Integration:** System integration or connector work
-- **Migration / Cutover** (`plan-review` only): moving data, users, or traffic — judged on backup, rollback trigger, idempotency, shadow period
-- **Spike** (`plan-review` only): a plan whose deliverable is a *decision* — judged on question, metrics, environment, time box, default if inconclusive
+- **Migration / Cutover:** moving data, users, or traffic — `plan-author` fills the type-specific
+  authoring controls for backup/restore rehearsal, idempotent/resumable steps, shadow/canary
+  comparison, cutover rollback trigger, and post-cutover retirement; `plan-review` judges them.
+- **Spike:** a plan whose deliverable is a *decision* — `plan-author` fills the type-specific
+  authoring controls for question, metrics/thresholds, environment, time box, decision record,
+  and default if inconclusive; `plan-review` judges them.
 
 The skills auto-detect plan type from context or prompt.
 

@@ -6,6 +6,8 @@
 |--------|----------|
 | "write a plan for…" · "turn this brief into a plan" · "draft a plan.md" | Activates |
 | "start a new project" · "I have an idea, plan it" | Activates |
+| "plan this database cutover" · "write a migration plan" | Activates — classifies as Migration / Cutover |
+| "run a spike to choose between these approaches" | Activates — classifies as Spike |
 | "/plan-author <brief-or-path>" · "/plan-author --out docs/plan/plan.md" | Activates |
 | "review this plan" | Does NOT activate — that is `plan-review` (the inverse skill) |
 
@@ -27,8 +29,9 @@ Run the script tests against a **repo checkout**: the script sources
 
 ## `score-draft.sh` fixture tests
 
-The script runs 36 completeness checks (the eleven plan-review categories, mirrored from
-CHECKLIST-COMPLETENESS.md). The fixture below is built to pass **exactly 30 of 36** — it
+The script runs 36 base completeness checks (the eleven plan-review categories, mirrored from
+CHECKLIST-COMPLETENESS.md), plus five Migration / Cutover or six Spike checks when the type
+metadata selects them. The fixture below is built to pass **exactly 30 of 36** — it
 deliberately omits six sections so both the pass and fail paths of the shared `check()` and
 the backfill list are exercised. Any drift in the score or the MISSING list means a pattern
 changed. Update this file deliberately, never silently.
@@ -141,6 +144,41 @@ printf '# Plan\n\nWe will build a thing.\n' > "$WORK/thin.md"
 Both usage errors print `Usage: score-draft.sh <plan-file>` to stderr. Successful runs
 always exit 0 — a low completeness score is coaching output, not a failure.
 
+## Type-specific authoring checks
+
+The scorer must add the applicable controls and leave the other type's controls out. Append each
+fixture below to the base `draft.md` from the preceding test; the base fixture intentionally still
+misses its six generic sections, so these checks pin the conditional totals and the absence of
+type-specific failures:
+
+```bash
+cat "$WORK/draft.md" > "$WORK/migration.md"
+cat >> "$WORK/migration.md" <<'EOF'
+
+**Type:** Migration / Cutover
+## Type-Specific Requirements
+Backup and restore rehearsal; idempotent and resumable steps; shadow/canary with a diff oracle;
+cutover gate and rollback trigger; post-cutover validation and old-path retirement.
+EOF
+"$REPO/plan-author/scripts/score-draft.sh" "$WORK/migration.md"
+# → Score: 35 / 41 (85%); no MISSING: M. lines
+
+cat "$WORK/draft.md" > "$WORK/spike.md"
+cat >> "$WORK/spike.md" <<'EOF'
+
+**Type:** Spike
+## Type-Specific Requirements
+Question answerable by a measurement; metrics and thresholds; environment; time box and decide-by
+gate; decision record in the informed plan; default if inconclusive.
+EOF
+"$REPO/plan-author/scripts/score-draft.sh" "$WORK/spike.md"
+# → Score: 36 / 42 (85%); no MISSING: S. lines
+```
+
+The template and checklist must expose the same M.1–M.5 and S.1–S.6 controls. A complete
+Migration / Cutover plan therefore has 41 checks and a complete Spike has 42; a generic 36/36
+score is not sufficient for either type.
+
 ## Functional Test (LLM in the loop)
 
 Run `/plan-author` on a one-paragraph brief (e.g. "a CLI that watches a mailbox and files
@@ -160,5 +198,7 @@ beads for every bounce"). Expected:
   CHECKLIST-COMPLETENESS.md item; keep the two in sync when editing either.
 - **Exit codes**: 0 on any successful scoring, 1 on usage error.
 - **Status bands**: ≥ 90 COMPLETE · 70–89 BACKFILL NEEDED · < 70 INCOMPLETE.
+- **Conditional type controls**: Migration / Cutover adds M.1–M.5; Spike adds S.1–S.6; the
+  non-applicable block does not affect the score.
 - **Substrate-agnostic**: matching is grep over visible words — writing the words without
   doing the thinking defeats your own gate; the full `/plan-review` is the real judge.
