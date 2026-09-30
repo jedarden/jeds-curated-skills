@@ -4,11 +4,16 @@ A collection of Claude Code skills for agent-driven software development workflo
 
 ## Installation
 
+Forgejo is the canonical repository and supported Git remote. GitHub is a
+read-only mirror maintained by Forgejo. Clone from Forgejo, and push changes
+to its `origin`; the server-side push mirror publishes those commits to GitHub.
+Do not configure a second client-side push remote.
+
 Use the included installer to select which skills to install:
 
 ```bash
 # Clone the repository
-git clone https://github.com/jedarden/jeds-curated-skills ~/jeds-curated-skills
+git clone https://git.ardenone.com/jedarden/jeds-curated-skills.git ~/jeds-curated-skills
 
 # List available skills
 cd ~/jeds-curated-skills
@@ -24,7 +29,7 @@ cd ~/jeds-curated-skills
 **Or** clone directly to your Claude Code skills directory (overwrites existing skills):
 
 ```bash
-git clone https://github.com/jedarden/jeds-curated-skills ~/.claude/skills
+git clone https://git.ardenone.com/jedarden/jeds-curated-skills.git ~/.claude/skills
 ```
 
 ## Checking for drift
@@ -642,4 +647,4 @@ drift-checker bead (jcs-3) will eventually report version mismatches automatical
 
 Part of [jedarden.com](https://jedarden.com)
 
-*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/jeds-curated-skills — issues and PRs are welcome here either way.*
+*GitHub is a read-only mirror of [the canonical Forgejo repository](https://git.ardenone.com/jedarden/jeds-curated-skills) — clone and push through Forgejo.*
