@@ -2,8 +2,12 @@
 
 This file is the single decision log and architecture reference for this repo, per the
 workspace's repo convention. It was created retroactively on 2026-07-20 — the repo shipped
-14 skills over Jun 25–Jul 19 without a `docs/plan/plan.md`, so this file starts honest rather
-than fabricating a plan-of-record after the fact. It grows forward from here as an ADR log.
+14 skills over Jun 25–Jul 19 without a `docs/plan/plan.md`; the current canonical inventory is
+16 skills (15 lifecycle skills plus the auxiliary `usage-statusline` observer). This file starts
+honest rather than fabricating a plan-of-record after the fact. It grows forward from here as an
+ADR log. See [docs/skill-inventory.md](../skill-inventory.md) for the source of truth.
+
+<!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
 
 ## What this repo is
 
@@ -28,11 +32,10 @@ version generalized that to `$HOME`. Nothing broke — but it's a live demonstra
 problem ADR-1 addresses: a `cp`-once, no-registry distribution model with no way to detect that
 an installed copy has drifted from the source of truth.
 
-Of the 14 skills, only `plan-review` has any form of self-test (`SELF-TEST.md`) — and it's a
-manual runbook, not something CI can run unattended (it names a sample plan path outside this
-repo and drives the skill through an actual `/plan-review` invocation, i.e. it needs an LLM in
-the loop). The other 13 skills have zero regression coverage: a bad edit to a checklist or a
-`scripts/*.sh` heuristic would ship silently.
+At the 2026-07-20 baseline, only `plan-review` had any form of self-test (`SELF-TEST.md`) — and
+it was a manual runbook, not something CI could run unattended. The current 16-skill inventory
+has a `SELF-TEST.md` for every skill; the fixture suite provides the automated script coverage
+listed in the canonical inventory.
 
 **Update 2026-09-15 — the script-bearing skills now have a regression net.** Every skill
 carrying a `score-*.sh`/`scan-*.sh` script has a `SELF-TEST.md`: `plan-review` (fixture with
@@ -114,7 +117,7 @@ cannot source the lib itself).
 
 ### Context
 
-This repo has grown to 14 skills in under a month with no automated check that a skill is
+At the 2026-07-20 baseline, this repo had grown to 14 skills in under a month with no automated check that a skill is
 internally consistent. The failure mode is specific and already latent: a `SKILL.md`
 frontmatter typo (`allowed-tools` missing a tool the skill actually invokes), a checklist file
 renamed without updating the reference in `SKILL.md`, or a shell script with a syntax error in
@@ -181,8 +184,8 @@ this ADR).
 #### Alternative B — Full LLM-driven functional test suite (run every skill against a fixture, grade the output)
 - **Pros:** would actually validate the thing users care about — does the skill produce a good
   review/plan/postmortem — not just that the files parse.
-- **Cons:** requires an LLM call per skill per run (14+ calls), needs fixture inputs and a
-  rubric or LLM-judge per skill (doesn't exist for 13 of 14 skills today), is slow and
+- **Cons:** requires an LLM call per skill per run (16+ calls), needs fixture inputs and a
+  rubric or LLM-judge per skill (many skills still lack one), is slow and
   non-deterministic enough to be a poor pre-commit gate, and mixing it with structural checks
   would make the fast/cheap check slow and flaky by association.
 - **Why not:** this is real, valuable work, but it's a bigger and different investment than
@@ -218,7 +221,8 @@ this ADR).
   per-skill `version:` field + root `CHANGELOG.md`; root `install.sh` for selective,
   non-destructive installs into an already-populated `~/.claude/skills/`; extending
   `SELF-TEST.md`-style functional self-tests to `diff-review` and `repo-hygiene`; an SDLC
-  lifecycle map doc chaining the 14 skills in invocation order.
+  lifecycle map doc chaining the 15 lifecycle skills in invocation order, with
+  `usage-statusline` documented separately as an auxiliary observer.
 
 ### Reversibility / Cost to Change
 

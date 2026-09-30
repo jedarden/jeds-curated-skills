@@ -13,6 +13,8 @@
 #    script and enforces the committed baseline scripts/shellcheck-baseline.txt
 #    (new findings fail; baseline entries are known, accepted debt). Skipped
 #    with a notice when shellcheck is not on PATH.
+# 6. Inventory consistency — scripts/check-skill-inventory.sh compares the
+#    canonical inventory with skill directories and all documented counts.
 #
 # Exit codes: 0 = all valid, 1 = validation failures, 2 = usage error
 
@@ -279,6 +281,19 @@ validate_shell_lint() {
     fi
 }
 
+# Canonical inventory, documentation, and coverage ratchet. This runs only
+# during the full-repository validation used by the pre-commit hook.
+validate_skill_inventory() {
+    echo ""
+    echo "=== Skill inventory consistency ==="
+
+    if bash "$SCRIPT_DIR/check-skill-inventory.sh"; then
+        log_success "Skill inventory is consistent"
+    else
+        log_error "Skill inventory is inconsistent (see output above)"
+    fi
+}
+
 # Main
 main() {
     local skills_to_check=()
@@ -326,6 +341,7 @@ main() {
     # not fail on another skill's lint state. The pre-commit hook runs in
     # full-repo mode, so commits are always gated.
     if [[ $# -eq 0 ]]; then
+        validate_skill_inventory
         validate_shell_lint
     fi
 

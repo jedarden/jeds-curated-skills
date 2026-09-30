@@ -151,6 +151,14 @@ Each skill is a self-contained, checklist-driven artifact derived from the struc
 patterns of high-quality work. They cover the agent-driven development lifecycle from
 spec through release.
 
+The canonical inventory is [docs/skill-inventory.md](docs/skill-inventory.md): this repository
+currently contains 16 skills, comprising 15 lifecycle skills and the auxiliary
+`usage-statusline` observer. Every skill has a `SELF-TEST.md`; the fixture suite replays 10
+script fixtures across 9 skills. The inventory check runs as part of
+`scripts/validate-skills.sh` so these counts and the headings below cannot drift.
+
+<!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
+
 ### Plan & design
 
 #### `plan-author`

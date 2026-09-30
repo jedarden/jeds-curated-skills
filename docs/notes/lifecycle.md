@@ -2,6 +2,12 @@
 
 This document maps the agent-driven software development lifecycle to the specific skills to invoke at each stage.
 
+The canonical inventory is [../skill-inventory.md](../skill-inventory.md). The lifecycle contains
+15 skills; `usage-statusline` is the one auxiliary observer and is documented in the inventory
+but is not an SDLC stage.
+
+<!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
+
 ## Overview Flow
 
 ```
@@ -91,7 +97,6 @@ The skills auto-detect plan type from context or prompt.
 | Stage | Skill | When to Invoke |
 |-------|-------|----------------|
 | **Threat Modeling** | `threat-model` | Produce or review STRIDE-based threat model before release |
-| **Security Review** | `security-review` | General security audit (if needed) |
 
 ### Release & Operations Phase
 
