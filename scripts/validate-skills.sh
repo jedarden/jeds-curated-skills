@@ -5,15 +5,16 @@
 # Per ADR-1 (2026-07-20), this script validates every skill directory for:
 # 1. Frontmatter schema (SKILL.md YAML frontmatter with required fields)
 # 2. Reference integrity (files referenced in SKILL.md exist)
-# 3. Shell syntax (bash -n on all scripts/*.sh)
-# 4. Executable bit (scripts/*.sh have +x)
+# 3. SELF-TEST.md presence (every skill carries the documented self-test)
+# 4. Shell syntax (bash -n on all scripts/*.sh)
+# 5. Executable bit (scripts/*.sh have +x)
 #
 # Plus one repo-wide pass (full-repo runs only, not per-skill):
-# 5. Shell lint — scripts/lint-shell.sh runs shellcheck over every shell
+# 6. Shell lint — scripts/lint-shell.sh runs shellcheck over every shell
 #    script and enforces the committed baseline scripts/shellcheck-baseline.txt
 #    (new findings fail; baseline entries are known, accepted debt). Skipped
 #    with a notice when shellcheck is not on PATH.
-# 6. Inventory and lifecycle consistency — scripts/check-skill-inventory.sh
+# 7. Inventory and lifecycle consistency — scripts/check-skill-inventory.sh
 #    compares the canonical inventory with skill directories and all
 #    documented counts, and requires every skill directory to be represented
 #    in the lifecycle map or an explicit non-SDLC whitelist.
@@ -182,6 +183,19 @@ validate_references() {
     fi
 }
 
+# Validate the repository-wide self-test convention. This is deliberately a
+# structural check rather than part of the script-fixture ratchet: prose-only
+# skills and skills without scripts still need a SELF-TEST.md.
+validate_self_test() {
+    local skill_dir="$1"
+
+    if [[ -f "$skill_dir/SELF-TEST.md" ]]; then
+        log_success "  SELF-TEST.md present"
+    else
+        log_error "Missing SELF-TEST.md"
+    fi
+}
+
 # Validate shell scripts
 validate_shell_syntax() {
     local skill_dir="$1"
@@ -257,6 +271,7 @@ validate_skill() {
 
     validate_frontmatter "$skill_dir" "$skill_name"
     validate_references "$skill_dir"
+    validate_self_test "$skill_dir"
     validate_shell_syntax "$skill_dir"
     validate_executable_bits "$skill_dir"
 
