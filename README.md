@@ -119,7 +119,7 @@ Three suites run before each commit (via the pre-commit hook installed by `scrip
 | Suite | Covers |
 |-------|--------|
 | `scripts/validate-skills.sh` | Static structure per ADR-1: frontmatter schema, reference integrity, `bash -n`, executable bits, ShellCheck baseline ratchet |
-| `scripts/test-root-scripts.sh` | Documented contracts of the root scripts, including the isolated factory-review timer install, re-install, dry-run, memory-failure, and uninstall fixtures |
+| `scripts/test-root-scripts.sh` | Documented root-script contracts, including isolated installer preservation/idempotence, shared-helper execution, usage-statusline settings preservation, and the factory-review timer lifecycle fixtures |
 | `scripts/test-script-fixtures.sh` | The per-skill `SELF-TEST.md` script fixtures: each score/scan script's heredoc fixture replayed mechanically against its pinned counts, MISSING lists, and exit codes — any mismatch fails the commit or the push |
 
 The push path itself has an external heartbeat: `scripts/check-push-ci.sh`

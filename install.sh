@@ -198,10 +198,16 @@ inline_lib_common() {
             # Create a temporary file
             local tmp_file
             tmp_file=$(mktemp)
+            local mode
+            mode=$(stat -c '%a' "$script")
 
             # Write the inlined form (format shared with check-installed.sh
             # via lib/inline.sh — the checker re-derives exactly this)
             emit_inlined_script "$script" "$lib_common" > "$tmp_file"
+            # mktemp creates mode 600 by default. Preserve the source mode so
+            # executable skill scripts remain directly runnable after the
+            # source line is replaced with the inlined helper body.
+            chmod "$mode" "$tmp_file"
 
             # Replace original script with inlined version
             mv "$tmp_file" "$script"

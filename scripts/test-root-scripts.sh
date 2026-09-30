@@ -15,8 +15,11 @@
 #   install.sh behavior:
 #     --list       lists available skills (and only skills)
 #     <name>...    selective install: installs only the named skills and
-#                  leaves other installed skills untouched
+#                  leaves other installed skills untouched; a repeated install
+#                  is byte-identical
 #     --all        installs every skill --list reports
+#     shared-lib skills install self-contained, runnable scripts: their
+#     inlined helpers do not depend on a lib/ sibling in ~/.claude/skills/
 #
 #   install-hooks.sh pre-commit hook install:
 #     writes an executable .git/hooks/pre-commit into the repo that contains
@@ -219,6 +222,20 @@ run_check_installed_in() {
 run_install_in() {
   local repo_dir="$1"; shift
   env HOME="$FAKE_HOME" bash "$repo_dir/install.sh" "$@"
+}
+
+# Return a deterministic digest-like listing of a fixture tree. Include file
+# modes as well as content: an installer that preserves bytes but drops the
+# executable bit is not idempotent from the user's perspective.
+snapshot_tree() {
+  local root="$1"
+  (
+    cd "$root"
+    {
+      find . -type f -printf 'mode=%m path=%p\n' | LC_ALL=C sort
+      find . -type f -exec sha256sum {} + | LC_ALL=C sort
+    }
+  )
 }
 
 # Fixture copy of the repo holding everything the installer and checker
@@ -1643,6 +1660,8 @@ test_install_contracts() {
   mkdir -p "$FAKE_SKILLS/$SIBLING_SKILL"
   echo "sibling sentinel" > "$FAKE_SKILLS/$SIBLING_SKILL/SKILL.md"
   echo "hands off" > "$FAKE_SKILLS/$SIBLING_SKILL/$SIBLING_SENTINEL"
+  local sibling_snapshot
+  sibling_snapshot="$(snapshot_tree "$FAKE_SKILLS/$SIBLING_SKILL")"
 
   expect_exit 0 "selective install exits 0" run_install "$FIXTURE_SKILL"
   expect_ok "installed skill lands in fake ~/.claude/skills/" \
@@ -1653,9 +1672,20 @@ test_install_contracts() {
     test -f "$FAKE_SKILLS/$SIBLING_SKILL/$SIBLING_SENTINEL"
   expect_ok "sibling SKILL.md content unchanged" \
     grep -q "^sibling sentinel$" "$FAKE_SKILLS/$SIBLING_SKILL/SKILL.md"
+  expect_ok "selective install preserves unrelated skill byte-for-byte" \
+    test "$(snapshot_tree "$FAKE_SKILLS/$SIBLING_SKILL")" = "$sibling_snapshot"
   # The selective install must produce a copy the drift checker calls clean.
   expect_exit 0 "post-install round-trip: drift check → 0" \
     run_check_installed "$FIXTURE_SKILL"
+
+  # Re-installing the same selected skill must not produce observable drift,
+  # including permissions on executable scripts.
+  local installed_snapshot
+  installed_snapshot="$(snapshot_tree "$FAKE_SKILLS/$FIXTURE_SKILL")"
+  expect_exit 0 "re-install selected skill exits 0 (idempotent)" \
+    run_install "$FIXTURE_SKILL"
+  expect_ok "re-install selected skill is byte-identical" \
+    test "$(snapshot_tree "$FAKE_SKILLS/$FIXTURE_SKILL")" = "$installed_snapshot"
 
   # An unknown skill name fails without creating anything.
   expect_exit 1 "unknown skill name → 1" \
@@ -1678,6 +1708,19 @@ test_install_contracts() {
   fi
   expect_ok "sibling sentinel survives --all" \
     test -f "$FAKE_SKILLS/$SIBLING_SKILL/$SIBLING_SENTINEL"
+
+  # A skill that sources lib/common.sh in the checkout must remain runnable
+  # after installation, even though the per-skill destination has no lib/
+  # sibling. Running the installed executable exercises the inlined helpers,
+  # not just the marker or a syntax check.
+  new_fake_home
+  local installed_scan="$FAKE_SKILLS/$LIB_FIXTURE_SKILL/scripts/scan-headers.sh"
+  printf '# Fixture plan\n' > "$FAKE_HOME/fixture-plan.md"
+  expect_exit 0 "shared-helper skill install exits 0" run_install "$LIB_FIXTURE_SKILL"
+  expect_ok "shared-helper script carries the installed inline" \
+    grep -qF 'Inlined from lib/common.sh during install' "$installed_scan"
+  expect_exit 0 "installed shared-helper script runs without repo lib" \
+    env HOME="$FAKE_HOME" "$installed_scan" "$FAKE_HOME/fixture-plan.md"
 }
 
 # --- install-hooks.sh pre-commit hook install --------------------------------
@@ -1792,10 +1835,13 @@ test_statusline_contracts() {
   new_fake_home
   printf '{"statusLine":{"type":"command","command":"cat /tmp/other.sh"}}' \
     > "$FAKE_HOME/.claude/settings.json"
+  cp "$FAKE_HOME/.claude/settings.json" "$FAKE_HOME/settings.before"
   expect_exit 0 "install alongside foreign statusLine exits 0" run_install usage-statusline
   expect_ok "foreign statusLine command untouched" \
     jq -e '.statusLine.command == "cat /tmp/other.sh"' \
       "$FAKE_HOME/.claude/settings.json"
+  expect_ok "foreign statusLine settings.json preserved byte-for-byte" \
+    cmp -s "$FAKE_HOME/settings.before" "$FAKE_HOME/.claude/settings.json"
 
   # Direct-clone layout: install.sh lives inside the target skills directory.
   # The post-clone setup must not rm the source skill before copying it.
