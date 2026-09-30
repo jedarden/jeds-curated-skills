@@ -4,7 +4,9 @@
 #
 # The canonical rows live in docs/skill-inventory.md. This check compares them
 # with the actual skill directories, then checks the counts and coverage claims
-# repeated in the README, lifecycle map, and plan.
+# repeated in the README, lifecycle map, and plan. It also enforces that every
+# discovered skill is represented in the lifecycle map or an explicit
+# non-SDLC whitelist.
 #
 # Exit codes: 0 = inventory is consistent, 1 = drift detected, 2 = usage or
 # repository-layout error.
@@ -18,6 +20,14 @@ README="$REPO_ROOT/README.md"
 LIFECYCLE="$REPO_ROOT/docs/notes/lifecycle.md"
 PLAN="$REPO_ROOT/docs/plan/plan.md"
 FIXTURE_TEST="$REPO_ROOT/scripts/test-script-fixtures.sh"
+
+# These are real skill directories that are intentionally outside the SDLC
+# lifecycle map. Keep this list explicit: adding another skill here is a
+# deliberate review decision, not a way for the lifecycle map to silently
+# become incomplete.
+NON_SDLC_SKILLS=(
+    usage-statusline
+)
 
 if [[ ! -f "$INVENTORY" || ! -f "$README" || ! -f "$LIFECYCLE" || ! -f "$PLAN" ]]; then
     echo "check-skill-inventory: required documentation is missing" >&2
@@ -98,6 +108,30 @@ if ! diff -u "$expected_self_test_names" "$actual_self_test_names"; then
     fail "SELF-TEST.md skill coverage does not match the canonical inventory"
 fi
 
+# The lifecycle map is a completeness boundary, not just a set of counts.
+# Discover skill directories directly and require each one to be either
+# referenced as an exact backtick-wrapped name in lifecycle.md or listed in
+# the explicit non-SDLC whitelist above. This catches a newly added skill even
+# if somebody also forgets to add its canonical inventory row.
+non_sdlc_names="$tmp_dir/non-sdlc"
+printf '%s\n' "${NON_SDLC_SKILLS[@]}" | LC_ALL=C sort -u > "$non_sdlc_names"
+while IFS= read -r name; do
+    if ! grep -Fxq "$name" "$actual"; then
+        fail "non-SDLC whitelist names a missing skill directory: $name"
+    fi
+done < "$non_sdlc_names"
+
+lifecycle_names_raw="$tmp_dir/lifecycle-raw"
+grep -oE '`[a-z][a-z0-9-]*`' "$LIFECYCLE" | tr -d '`' | LC_ALL=C sort -u > "$lifecycle_names_raw"
+lifecycle_names="$tmp_dir/lifecycle"
+comm -23 "$lifecycle_names_raw" "$non_sdlc_names" > "$lifecycle_names"
+
+expected_lifecycle_from_dirs="$tmp_dir/expected-lifecycle-from-dirs"
+comm -23 "$actual" "$non_sdlc_names" > "$expected_lifecycle_from_dirs"
+if ! diff -u "$expected_lifecycle_from_dirs" "$lifecycle_names"; then
+    fail "every skill directory must be referenced in lifecycle.md or explicitly whitelisted as non-SDLC"
+fi
+
 # Check the machine-readable count marker in each document that repeats the
 # inventory summary. A marker is easier to audit than guessing at prose.
 expected_marker="total=$total lifecycle=$lifecycle_count auxiliary=$auxiliary_count self-tests=$self_test_count fixture-skills=$fixture_skill_count"
@@ -121,8 +155,6 @@ fi
 
 # Lifecycle references are exact backtick-wrapped skill names. Any unknown
 # name, such as a row for a skill that is not shipped, is also an error.
-grep -oE '`[a-z][a-z0-9-]*`' "$LIFECYCLE" | tr -d '`' \
-    | grep -v '^usage-statusline$' | LC_ALL=C sort -u > "$lifecycle_names"
 expected_lifecycle="$tmp_dir/expected-lifecycle"
 awk -F '\t' '$2 == "lifecycle" { print $1 }' "$canonical" | LC_ALL=C sort > "$expected_lifecycle"
 if ! diff -u "$expected_lifecycle" "$lifecycle_names"; then

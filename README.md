@@ -154,8 +154,9 @@ spec through release.
 The canonical inventory is [docs/skill-inventory.md](docs/skill-inventory.md): this repository
 currently contains 16 skills, comprising 15 lifecycle skills and the auxiliary
 `usage-statusline` observer. Every skill has a `SELF-TEST.md`; the fixture suite replays 10
-script fixtures across 9 skills. The inventory check runs as part of
-`scripts/validate-skills.sh` so these counts and the headings below cannot drift.
+script fixtures across 9 skills. The inventory and lifecycle-coverage check runs
+as part of `scripts/validate-skills.sh`—the same suite invoked by push CI—so
+these counts, the lifecycle map, and the headings below cannot drift.
 
 <!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
 

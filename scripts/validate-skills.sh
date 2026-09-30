@@ -13,8 +13,10 @@
 #    script and enforces the committed baseline scripts/shellcheck-baseline.txt
 #    (new findings fail; baseline entries are known, accepted debt). Skipped
 #    with a notice when shellcheck is not on PATH.
-# 6. Inventory consistency — scripts/check-skill-inventory.sh compares the
-#    canonical inventory with skill directories and all documented counts.
+# 6. Inventory and lifecycle consistency — scripts/check-skill-inventory.sh
+#    compares the canonical inventory with skill directories and all
+#    documented counts, and requires every skill directory to be represented
+#    in the lifecycle map or an explicit non-SDLC whitelist.
 #
 # Exit codes: 0 = all valid, 1 = validation failures, 2 = usage error
 
@@ -285,10 +287,10 @@ validate_shell_lint() {
 # during the full-repository validation used by the pre-commit hook.
 validate_skill_inventory() {
     echo ""
-    echo "=== Skill inventory consistency ==="
+    echo "=== Skill inventory and lifecycle coverage ==="
 
     if bash "$SCRIPT_DIR/check-skill-inventory.sh"; then
-        log_success "Skill inventory is consistent"
+        log_success "Skill inventory and lifecycle coverage are consistent"
     else
         log_error "Skill inventory is inconsistent (see output above)"
     fi

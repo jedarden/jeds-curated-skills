@@ -6,6 +6,11 @@ The canonical inventory is [../skill-inventory.md](../skill-inventory.md). The l
 15 skills; `usage-statusline` is the one auxiliary observer and is documented in the inventory
 but is not an SDLC stage.
 
+The map has a completeness gate: the full validator discovers every repository directory that
+contains `SKILL.md` and requires its exact name to appear in this document or in the validator's
+explicit non-SDLC whitelist. A skill that is not an SDLC stage must be recorded as such; the
+current exception is `usage-statusline`.
+
 <!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
 
 ## Overview Flow
