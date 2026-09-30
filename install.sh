@@ -55,6 +55,18 @@ install_skill() {
         return 1
     fi
 
+    # A direct clone puts this repository itself at ~/.claude/skills, so the
+    # source and destination for every skill are the same directory. Never
+    # remove that source before copying it back; the clone already installed
+    # the skill, and usage-statusline only needs its out-of-tree setup.
+    if [[ "$src_dir" -ef "$dest_dir" ]]; then
+        echo -e "${GREEN}✓ $skill_name: already available from the direct clone${NC}"
+        if [[ "$skill_name" == "usage-statusline" ]]; then
+            install_statusline
+        fi
+        return 0
+    fi
+
     # Check if already installed
     if [[ -d "$dest_dir" ]]; then
         echo -e "${YELLOW}⚠ $skill_name: already installed, overwriting...${NC}"

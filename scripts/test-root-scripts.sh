@@ -33,6 +33,10 @@
 #     idempotently, never displacing a statusLine that runs something else,
 #     never dropping unrelated settings.json keys, and leaving invalid JSON
 #     untouched (exit 1)
+#   direct-clone usage-statusline setup:
+#     when the repository itself is cloned to ~/.claude/skills, running its
+#     install.sh must leave the cloned skill in place while deploying the
+#     out-of-tree script and preserving a foreign statusLine
 #
 #   check-installed.sh stale-inline detection (the inline is expected drift
 #   only while it matches what install.sh would produce TODAY):
@@ -1791,6 +1795,24 @@ test_statusline_contracts() {
   expect_exit 0 "install alongside foreign statusLine exits 0" run_install usage-statusline
   expect_ok "foreign statusLine command untouched" \
     jq -e '.statusLine.command == "cat /tmp/other.sh"' \
+      "$FAKE_HOME/.claude/settings.json"
+
+  # Direct-clone layout: install.sh lives inside the target skills directory.
+  # The post-clone setup must not rm the source skill before copying it.
+  new_fake_home
+  cp "$REPO_ROOT/install.sh" "$FAKE_SKILLS/install.sh"
+  cp -r "$REPO_ROOT/lib" "$FAKE_SKILLS/lib"
+  cp -r "$REPO_ROOT/usage-statusline" "$FAKE_SKILLS/usage-statusline"
+  printf '{"statusLine":{"type":"command","command":"cat /tmp/other.sh"},"theme":"dark"}' \
+    > "$FAKE_HOME/.claude/settings.json"
+  expect_exit 0 "direct-clone usage-statusline setup exits 0" \
+    env HOME="$FAKE_HOME" bash "$FAKE_SKILLS/install.sh" usage-statusline
+  expect_ok "direct-clone setup leaves the cloned skill in place" \
+    test -f "$FAKE_SKILLS/usage-statusline/SKILL.md"
+  expect_ok "direct-clone setup deploys the runtime copy" \
+    cmp -s "$repo_sl" "$FAKE_HOME/.claude/usage-statusline.sh"
+  expect_ok "direct-clone setup preserves a foreign statusLine" \
+    jq -e '.statusLine.command == "cat /tmp/other.sh" and .theme == "dark"' \
       "$FAKE_HOME/.claude/settings.json"
 
   # Non-destructive: invalid JSON is reported (exit 1) and left byte-identical.

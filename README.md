@@ -32,6 +32,19 @@ cd ~/jeds-curated-skills
 git clone https://git.ardenone.com/jedarden/jeds-curated-skills.git ~/.claude/skills
 ```
 
+This direct-clone shortcut installs the skill files, but it does not by itself
+deploy `~/.claude/usage-statusline.sh` or update `~/.claude/settings.json`. If
+you use `usage-statusline`, finish its setup from the clone:
+
+```bash
+~/.claude/skills/install.sh usage-statusline
+```
+
+The installer recognizes this in-place layout and only performs the
+out-of-tree setup; it does not remove the cloned skill. It merges the
+`statusLine` setting alongside other keys and leaves an existing `statusLine`
+that runs another command untouched.
+
 ## Checking for drift
 
 Skills are installed by copying into `~/.claude/skills/` (normally via `./install.sh`) with no automatic update or drift-detection mechanism. If you edit skills locally or update the repo, installed copies can silently diverge from the canonical source.
