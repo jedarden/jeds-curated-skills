@@ -97,10 +97,13 @@ This:
 2. Checks for an existing bead store (`.beads/` directory)
 3. For each remaining finding, creates a bead with:
    - **Title:** `hygiene: <category>: <short description>`
-   - **Label:** `hygiene`
+   - **Labels:** `hygiene`, `human` — the latter is in NEEDLE's default Pluck exclude
+     list, so a hygiene sweep's own findings stay out of the ready frontier until a
+     human reviews them, rather than becoming fleet-claimable the moment they're filed
    - **Priority:** 3 (normal)
    - **Unique ref:** `hygiene:<category>:<hash>` for deduplication
-   - **Description:** Full finding details with severity and example
+   - **Description:** Full finding details with severity and example, plus a `## Done
+     when` check (re-run the script; the finding is gone from its output)
 
 4. **Deduplication:** The `--unique-ref` ensures re-runs don't create duplicate beads.
    A repeated create returns `EXISTING ID` (or `EXISTING_CLOSED ID` if already resolved),

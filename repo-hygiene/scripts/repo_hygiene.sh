@@ -178,6 +178,10 @@ file_bead() { # category, example, severity
 Severity: ${severity}
 Example: ${example}
 
+## Done when
+Re-run repo_hygiene.sh --json on this repo; the ${category} finding no longer
+appears in its output.
+
 Filed by repo-hygiene after fix pass."
 
   # Determine which CLI to use
@@ -208,6 +212,7 @@ Filed by repo-hygiene after fix pass."
                          --description "$description" \
                          --priority 3 \
                          --label hygiene \
+                         --label human \
                          --unique-ref "$unique_ref" 2>&1) || rc=$?
 
   if [[ $rc -ne 0 ]]; then

@@ -46,12 +46,17 @@ Use TaskCreate to track each batch. Mark tasks as completed when done.
 ## Step 4: Re-Analyze (Loop)
 
 After all fixes are applied:
-1. Commit the changes with a descriptive message listing all gaps fixed
+1. Commit the changes with a descriptive message listing all gaps fixed. Stage the exact
+   paths the fix agents edited — never `git add -A` or `git commit -a`; a broad stage
+   sweeps in whatever else happens to be sitting in the working tree (another agent's
+   in-flight edits, scratch files, build output).
 2. Increment the round counter
 3. Go back to Step 2 with a fresh analysis agent
 
 Continue looping until:
-- A round finds 0 gaps, OR
+- **Two consecutive rounds** each find 0 gaps — a single clean round is weak evidence of
+  "actually done" versus this particular fresh-eyes agent missing something the next one
+  wouldn't; a round that finds a gap resets the consecutive-clean counter to zero, OR
 - A round finds only LOW severity gaps (ask user if they want to continue), OR
 - 5 rounds have been completed (diminishing returns)
 
@@ -68,5 +73,6 @@ After the final round, summarize:
 - **Fresh eyes**: Every analysis agent starts with no prior context. It reads the document cold.
 - **20 solutions per gap**: Don't take the obvious fix. Brainstorm 20 approaches, rank by how well they serve the document's goal, pick the best.
 - **Surgical edits**: Fix agents make targeted edits, not rewrites. Preserve existing content.
-- **Commit per round**: Each round's fixes are committed separately for traceability.
+- **Commit per round**: Each round's fixes are committed separately for traceability,
+  staging the exact paths edited — never `git add -A` or `git commit -a`.
 - **No cosmetic nitpicks**: Focus on gaps that would cause implementation confusion, security issues, or user-facing bugs.
