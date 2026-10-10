@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Push-CI heartbeat judged by evidence the cluster keeps** (2026-10-10) —
+  `scripts/check-push-ci.sh` judged delivery by a live `skills-validate`
+  workflow, but iad-ci's controller `retentionPolicy` count cap (20 completed /
+  20 failed, since 2026-09-22) deletes terminal workflows within about an hour
+  whatever the template's 7-day TTL, so the scheduled heartbeat failed 334 of
+  336 runs in a week while every push was in fact delivered
+  (skills-validate-7jdf8 for 3bf59d5672aa: submitted 2026-10-07T11:27:14Z,
+  deleted "due to max retention" 12:25:21Z). declarative-config now passes the
+  pushed SHA through the sensor and has `skills-validate` post the
+  `iad-ci/skills-validate` commit status on it (pending first, final state on
+  exit; manual runs post none); the check reads that status first, keeps the
+  live-workflow listing as a fallback, and treats an unreadable status API as
+  environmental (exit 2) unless the fallback verifies. The API token reaches
+  curl on stdin, never in argv.
+
 ### Added
 - **Push-CI heartbeat ratcheted onto a clock** (2026-09-17) —
   `scripts/check-push-ci.sh` existed but had to be remembered; nothing ran it

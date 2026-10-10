@@ -135,8 +135,13 @@ Three suites run before each commit (via the pre-commit hook installed by `scrip
 The push path itself has an external heartbeat: `scripts/check-push-ci.sh`
 runs every 30 minutes in `iad-ci` (the `push-ci-heartbeat` Argo CronWorkflow
 in declarative-config, `k8s/iad-ci/argo-workflows/`), which clones this repo
-and confirms the newest non-CI-authored `origin/main` push produced a
-sensor-submitted `skills-validate` workflow in `iad-ci`. Only the script's
+and confirms the newest non-CI-authored `origin/main` push carries the
+`iad-ci/skills-validate` Forgejo commit status — posted on the pushed SHA
+only by a sensor-submitted `skills-validate` run (pending when it starts,
+then its final state), so it survives the cluster deleting the workflow
+object within the hour. A live sensor-submitted workflow created after the
+push is accepted as a fallback. The status's state is the skills verdict;
+any state proves delivery. Only the script's
 exit 1 (path dead — pushes landing unvalidated) fails the run and turns it
 red; exit 2 (cannot judge) and exit 3 (inside the grace window) are recorded
 and stay green. The check is still runnable by hand the same way; it waits

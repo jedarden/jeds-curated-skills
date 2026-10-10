@@ -12,12 +12,28 @@
 # push landed unvalidated, the same failure class as the 2026-08-18 telemetry
 # blackout. This script turns the README's claim into a checked invariant:
 #
-#   For the newest pushable commit on origin/main, a skills-validate workflow
-#   submitted by the sensor must exist in iad-ci, created at or after that
-#   commit's committer date.
+#   The newest pushable commit on origin/main must carry the
+#   "iad-ci/skills-validate" Forgejo commit status, which only a
+#   sensor-submitted skills-validate run posts. Fallback: a skills-validate
+#   workflow submitted by the sensor still exists in iad-ci, created at or
+#   after that commit's committer date.
+#
+# Why the commit status is the primary evidence (2026-10-10, declarative-
+# config bead declarat-485a01f6): the iad-ci controller's retentionPolicy
+# count cap (completed/failed 20) deletes terminal workflows within about an
+# hour whatever the template's 7-day TTL, so judging by the live workflow
+# alone failed 334 of 336 scheduled runs in a week while every push was
+# delivered. The sensor passes the pushed SHA (body.after) as the
+# workflow's commit-sha argument; skills-validate posts the status on that
+# SHA before it clones (state pending) and again from its exit handler
+# (success/failure/error). Any state proves delivery — the state itself is
+# the skills verdict, reported here but not judged.
 #
 # Matching rules:
-#   - Only workflows whose generateName is exactly "skills-validate-" count.
+#   - Commit status: context exactly "iad-ci/skills-validate" on the
+#     reference commit's full SHA. Manual runs post no status (they have no
+#     commit-sha), so they cannot silence this check.
+#   - Fallback workflow: only generateName exactly "skills-validate-" counts.
 #     The sensor's trigger template uses that generateName; a manual run
 #     ("skills-validate-manual-...") proves the template works but says
 #     nothing about the webhook path, so it must not silence this check.
@@ -48,23 +64,35 @@
 #   SKILLS_CI_KUBECTL_SERVER  kubectl --server endpoint for iad-ci
 #                             (default: http://traefik-iad-ci:8001 — the
 #                             credential-free read-only proxy)
+#   SKILLS_CI_FORGEJO_API     Forgejo API base (default
+#                             https://git.ardenone.com/api/v1)
+#   SKILLS_CI_FORGEJO_REPO    owner/repo for the status lookup (default
+#                             jedarden/jeds-curated-skills)
+#   FORGEJO_TOKEN             API token (the CronWorkflow sets it); when
+#                             unset, the local git credential store is asked
+#                             for the API host. The token goes to curl on
+#                             stdin, never in argv, and is never printed.
 #
 # Exit codes:
-#   0  Verified — a sensor-submitted skills-validate workflow was created at
-#      or after the reference commit's committer date
-#   1  Heartbeat FAILURE — the reference push is older than the grace window
+#   0  Verified — the reference commit carries the iad-ci/skills-validate
+#      status, or (fallback) a sensor-submitted skills-validate workflow was
+#      created at or after its committer date
+#   1  Heartbeat FAILURE — the reference push is older than the grace window,
+#      the status API answered with no iad-ci/skills-validate status for it,
 #      and no matching workflow exists; the push-triggered CI path is dead
 #      and pushes are landing unvalidated. Alert (file a bead / fail the
 #      timer unit) on this code and no other.
 #   2  Environmental — cannot judge: not a git repo, no origin/main, fetch
-#      failed, kubectl/jq unusable, or the API query failed. Not a CI alarm.
+#      failed, kubectl/jq/curl unusable, the workflow query failed, or the
+#      status API was unreadable and the fallback did not verify. Not a CI
+#      alarm.
 #   3  Too recent — the reference push is younger than the grace window; a
 #      workflow may still be in flight. Re-run later; not an alarm.
 #
-# Cost note: the credential-free proxy has no server-side name filter and
-# skills-validate workflows carry no template label, so this scans every
-# workflow object in the namespace and filters client-side (~3 minutes against
-# the live cluster; fine for a weekly timer, noticeable by hand).
+# Cost note: the status lookup is one API call. The fallback runs only when
+# it finds nothing: the credential-free proxy has no server-side name filter
+# and skills-validate workflows carry no template label, so it lists every
+# workflow object in the namespace and filters client-side.
 #
 # Deliberately NOT part of the pre-commit hook or the skills-validate
 # template itself: it needs network and the cluster, and wiring the check
@@ -87,6 +115,11 @@ CI_AUTHOR="Argo Workflows CI"
 SENSOR_GENERATE_NAME="skills-validate-"
 # How far down origin/main to walk looking for a non-CI-authored tip.
 LOG_WALK_LIMIT=50
+FORGEJO_API="${SKILLS_CI_FORGEJO_API:-https://git.ardenone.com/api/v1}"
+FORGEJO_REPO="${SKILLS_CI_FORGEJO_REPO:-jedarden/jeds-curated-skills}"
+# The context skills-validate's report-delivery/report-status steps post
+# (declarative-config k8s/iad-ci/argo-workflows/skills-validate-workflowtemplate.yml).
+STATUS_CONTEXT="iad-ci/skills-validate"
 
 usage() {
   # Print the leading comment block: every "#" line after the shebang, up
@@ -126,7 +159,7 @@ case "$GRACE_MINUTES" in
   ''|*[!0-9]*) die_usage "--grace-minutes must be a non-negative integer" ;;
 esac
 
-for tool in git jq kubectl; do
+for tool in git jq kubectl curl; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo -e "${RED}Error: required tool '$tool' not found on PATH${NC}" >&2
     exit 2
@@ -176,13 +209,86 @@ if (( age_seconds < GRACE_MINUTES * 60 )); then
   exit 3
 fi
 
-# --- query iad-ci --------------------------------------------------------------
+# --- durable evidence: the commit status on the reference SHA ----------------
+
+# Token for the API: the environment first (the CronWorkflow), else the local
+# git credential store for the API host. Printed only into the pipe below.
+forgejo_token() {
+  if [[ -n "${FORGEJO_TOKEN:-}" ]]; then
+    printf '%s' "$FORGEJO_TOKEN"
+    return 0
+  fi
+  local host="${FORGEJO_API#*://}"
+  host="${host%%/*}"
+  printf 'protocol=https\nhost=%s\n\n' "$host" |
+    GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null |
+    sed -n 's/^password=//p'
+}
+
+# GET $1 into file $2, printing the HTTP status code. The Authorization
+# header reaches curl on stdin (-H @-) so the token never appears in argv.
+forgejo_get() {
+  local tok
+  tok="$(forgejo_token)"
+  if [[ -n "$tok" ]]; then
+    printf 'Authorization: token %s\n' "$tok" |
+      curl -sS -m 30 -H @- -o "$2" -w '%{http_code}' "$1"
+  else
+    curl -sS -m 30 -o "$2" -w '%{http_code}' "$1"
+  fi
+}
+
+work_tmp="$(mktemp -d "${TMPDIR:-/tmp}/push-ci-check.XXXXXX")"
+trap 'rm -rf "$work_tmp"' EXIT
+
+# status_lookup: "ok" when the API answered with a status list (whether or
+# not it holds our context), "unavailable" otherwise. Only an "ok" lookup
+# that found nothing may contribute to an alarm.
+status_lookup="unavailable"
+status_url="$FORGEJO_API/repos/$FORGEJO_REPO/commits/$ref_sha/statuses?limit=50"
+status_code="$(forgejo_get "$status_url" "$work_tmp/statuses.json" 2>"$work_tmp/statuses.err")"
+status_rc=$?
+if (( status_rc == 0 )) && [[ "$status_code" == 200 ]]; then
+  # Newest status of our context: state, target_url (two lines), or nothing.
+  if status_data="$(jq -r --arg ctx "$STATUS_CONTEXT" '
+      if type != "array" then error("not a status list") else . end
+      | [.[] | select(.context == $ctx)]
+      | sort_by(.id // 0)
+      | last
+      | if . == null then empty else (.state // ""), (.target_url // "") end
+    ' "$work_tmp/statuses.json" 2>/dev/null)"; then
+    status_lookup="ok"
+  fi
+fi
+
+if [[ "$status_lookup" == ok && -n "$status_data" ]]; then
+  mapfile -t status_fields <<< "$status_data"
+  status_state="${status_fields[0]:-}"
+  status_target="${status_fields[1]:-}"
+  echo -e "${GREEN}✓ Push-CI heartbeat verified${NC}"
+  echo "  commit status $STATUS_CONTEXT on ${ref_sha:0:12}: ${status_state:-unknown}"
+  [[ -n "$status_target" ]] && echo "  run: $status_target"
+  case "$status_state" in
+    failure|error)
+      echo -e "${YELLOW}  The push was delivered and validated, but validation is red ($status_state)."
+      echo -e "  That is the skills suites' verdict, not a delivery failure.${NC}"
+      ;;
+  esac
+  exit 0
+fi
+
+if [[ "$status_lookup" == ok ]]; then
+  echo "No $STATUS_CONTEXT commit status on ${ref_sha:0:12}; checking live workflows."
+else
+  echo -e "${YELLOW}Commit-status lookup unavailable (curl exit $status_rc, HTTP ${status_code:-none}); checking live workflows.${NC}"
+fi
+
+# --- fallback: query iad-ci for a live sensor-submitted workflow --------------
 
 # The proxy offers no server-side name filter and these workflows carry no
 # template label (workflows.argoproj.io/workflow-template is absent repo-wide,
 # see CLAUDE.md's known issue), so pull the namespace and filter client-side.
-wf_tmp="$(mktemp "${TMPDIR:-/tmp}/push-ci-workflows.XXXXXX.json")"
-trap 'rm -f "$wf_tmp"' EXIT
+wf_tmp="$work_tmp/workflows.json"
 # --request-timeout bounds the whole listing (the full namespace scan takes
 # ~3.5 minutes against the live proxy) so a hung proxy cannot hang a timer
 # unit until systemd gives up.
@@ -227,8 +333,17 @@ if [[ ! "$wf_total" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+# A missing workflow is only an alarm when the status API answered "no
+# status" too; with the durable evidence unreadable it cannot be judged.
+not_judgeable() {
+  echo -e "${RED}Error: no live sensor workflow verifies ${ref_sha:0:12} and the${NC}" >&2
+  echo -e "${RED}commit-status lookup was unavailable — cannot judge${NC}" >&2
+  exit 2
+}
+
 if (( wf_total == 0 )); then
-  echo -e "${RED}No sensor-submitted '$SENSOR_GENERATE_NAME' workflow is on record in iad-ci${NC}."
+  [[ "$status_lookup" == ok ]] || not_judgeable
+  echo -e "${RED}No $STATUS_CONTEXT commit status on ${ref_sha:0:12} and no sensor-submitted '$SENSOR_GENERATE_NAME' workflow is on record in iad-ci${NC}."
   echo -e "${RED}✗ Push-CI heartbeat FAILED:${NC} the webhook trigger path has delivered"
   echo -e "nothing the cluster still lists (the listing covers the cluster's"
   echo -e "workflow retention window). Check the Forgejo webhook for this repo,"
@@ -252,8 +367,10 @@ if (( last_epoch >= ref_epoch )); then
   exit 0
 fi
 
+[[ "$status_lookup" == ok ]] || not_judgeable
 echo -e "${RED}✗ Push-CI heartbeat FAILED${NC}"
 echo "  reference commit : ${ref_sha:0:12} at $ref_iso (author $ref_author)"
+echo "  commit status    : no $STATUS_CONTEXT"
 echo "  newest workflow  : $last_name at $last_iso — BEFORE the push"
 echo "  sensor-submitted workflows on record: $wf_total"
 echo ""

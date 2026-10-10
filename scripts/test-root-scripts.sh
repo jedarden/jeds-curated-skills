@@ -60,20 +60,27 @@
 #     ADR-1's hardcoded /home/coding path was found live
 #
 #   check-push-ci.sh push-CI heartbeat (scripts/check-push-ci.sh):
-#     exits 0 when a sensor-submitted (generateName exactly
-#     "skills-validate-", never the manual "-manual-" prefix) workflow was
-#     created at/after the newest non-CI-authored commit on origin/main;
-#     1 is the alarm code (no workflow since the push, or nothing on
-#     record); 2 is environmental (bad usage, no origin/main, kubectl
-#     failure, malformed listing) and must never masquerade as an alarm —
+#     exits 0 when the newest non-CI-authored commit on origin/main carries
+#     the "iad-ci/skills-validate" Forgejo commit status (any state — the
+#     durable evidence that outlives the controller's workflow GC; kubectl
+#     is then never consulted), or as fallback when a sensor-submitted
+#     (generateName exactly "skills-validate-", never the manual "-manual-"
+#     prefix) workflow was created at/after that commit; 1 is the alarm
+#     code (the status API answered with no such status AND no workflow
+#     since the push, or nothing on record); 2 is environmental (bad
+#     usage, no origin/main, kubectl failure, malformed listing, or a
+#     status API that is unreachable/non-200/malformed while the fallback
+#     does not verify) and must never masquerade as an alarm —
 #     including the empty-listing case, where command substitution's
 #     trailing-newline stripping collapses the jq output and a naive
 #     array read dies "unbound variable" under set -u; 3 means the push
 #     is younger than the grace window and kubectl is never consulted.
 #     Reference-walk and CI-author skip mirror the sensor's own filter
-#     (body.head_commit.author.name != "Argo Workflows CI"). Runs against
-#     a fixture bare origin + clone with fixed commit dates and a fake
-#     kubectl shim on PATH — the real cluster is never contacted.
+#     (body.head_commit.author.name != "Argo Workflows CI"). The API
+#     token reaches curl on stdin, never in its argv. Runs against a
+#     fixture bare origin + clone with fixed commit dates and fake kubectl
+#     and curl shims on PATH — the real cluster and Forgejo are never
+#     contacted.
 #
 # Everything runs against a temporary HOME with a fake ~/.claude/skills/;
 # the real HOME is never read or written. Usage:
@@ -269,10 +276,10 @@ new_inline_fixture_repo() {
 # --- check-push-ci.sh fixtures ------------------------------------------------
 
 # Fixture subject: the push-CI heartbeat. A bare origin + a clone with
-# deterministic commit dates, and a fake kubectl first on PATH that replays a
-# canned workflow listing. The real endpoint is never contacted: the script's
-# server override points at a dead address, so a shim bypass fails fast
-# instead of silently passing.
+# deterministic commit dates, and fake kubectl/curl first on PATH that replay
+# a canned workflow listing and a canned Forgejo commit-status list. The real
+# endpoints are never contacted: the script's server and API overrides point
+# at a dead address, so a shim bypass fails fast instead of silently passing.
 
 PUSH_CI_DIR=""
 PUSH_CI_SHIM=""
@@ -281,6 +288,27 @@ PUSH_CI_MARKER=""
 # same commits when picking its reference.
 PUSH_CI_CI_AUTHOR="Argo Workflows CI"
 PUSH_CI_AUTHOR="Fixture Author"
+# Fixture-only stand-in for FORGEJO_TOKEN; the assertions check it reaches
+# curl on stdin and never in argv.
+PUSH_CI_FIXTURE_TOKEN="fixture-token-not-a-credential"
+
+# Emit a Forgejo commit-status list. Each argument is "context|state"; ids
+# ascend in argument order. No arguments yields "[]" (API answered, nothing
+# posted) — the default, so the workflow-listing fixtures below judge alone.
+write_statuses() {
+  local out="$PUSH_CI_DIR/statuses.json" item first=1 id=0
+  printf '[' >"$out"
+  for item in "$@"; do
+    ((first)) || printf ',' >>"$out"
+    first=0
+    id=$((id + 1))
+    local ctx state
+    IFS='|' read -r ctx state <<<"$item"
+    printf '{"id":%d,"context":%s,"state":%s,"target_url":"https://argo-ci.example/wf-%d"}' \
+      "$id" "$(jq -Rn --arg v "$ctx" '$v')" "$(jq -Rn --arg v "$state" '$v')" "$id" >>"$out"
+  done
+  printf ']' >>"$out"
+}
 
 # Emit a workflow-listing JSON. Each argument is "name|generateName|timestamp";
 # no arguments yields the empty listing (the heartbeat's total-0 path).
@@ -342,6 +370,26 @@ new_push_ci_shim() {
     printf 'cat %q\n' "$PUSH_CI_DIR/listing.json"
   } >"$PUSH_CI_SHIM/kubectl"
   chmod +x "$PUSH_CI_SHIM/kubectl"
+  # Fake curl: records argv and stdin, writes the canned status list to the
+  # -o target, prints PUSH_CI_CURL_CODE (default 200) as the -w output, or
+  # fails like a connection error when PUSH_CI_CURL_FAIL is set.
+  cat >"$PUSH_CI_SHIM/curl" <<'SHIM'
+#!/usr/bin/env bash
+out=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  [[ "${args[i]}" == -o ]] && out="${args[i + 1]}"
+done
+printf '%s\n' "$@" >"$PUSH_CI_CURL_ARGV"
+if [[ " $* " == *" @- "* ]]; then cat >"$PUSH_CI_CURL_STDIN"; else : >"$PUSH_CI_CURL_STDIN"; fi
+if [[ -n "${PUSH_CI_CURL_FAIL:-}" ]]; then
+  echo "curl shim: intentional connection failure" >&2
+  exit 7
+fi
+[[ -n "$out" ]] && cat "$PUSH_CI_STATUSES" >"$out"
+printf '%s' "${PUSH_CI_CURL_CODE:-200}"
+SHIM
+  chmod +x "$PUSH_CI_SHIM/curl"
 }
 
 # Run the heartbeat inside the fixture clone with the shim first on PATH.
@@ -352,7 +400,12 @@ run_push_ci() {
     cd "$PUSH_CI_DIR/clone" || exit 2
     export PATH="$PUSH_CI_SHIM:$PATH"
     export SKILLS_CI_KUBECTL_SERVER="http://push-ci-fixture.invalid:1"
+    export SKILLS_CI_FORGEJO_API="http://push-ci-fixture.invalid:1/api/v1"
+    export FORGEJO_TOKEN="$PUSH_CI_FIXTURE_TOKEN"
     export PUSH_CI_KUBECTL_CALLED="$PUSH_CI_MARKER"
+    export PUSH_CI_STATUSES="$PUSH_CI_DIR/statuses.json"
+    export PUSH_CI_CURL_ARGV="$PUSH_CI_DIR/curl.argv"
+    export PUSH_CI_CURL_STDIN="$PUSH_CI_DIR/curl.stdin"
     bash "$REPO_ROOT/scripts/check-push-ci.sh" "$@"
   )
 }
@@ -1979,6 +2032,7 @@ test_push_ci_contracts() {
   echo "=== check-push-ci.sh push-CI heartbeat ==="
   new_push_ci_fixture
   new_push_ci_shim
+  write_statuses # API answers, nothing posted: the listing judges alone
 
   # Usage surface.
   expect_exit 0 "--help exits 0" run_push_ci --help
@@ -2024,6 +2078,47 @@ test_push_ci_contracts() {
   unset PUSH_CI_KUBECTL_FAIL # must not leak into the assertions below
   printf '{"kind":"Workflow","spec":{}}' >"$PUSH_CI_DIR/listing.json" # no .items
   expect_exit 2 "malformed listing → 2 (environmental)" run_push_ci
+
+  # Durable evidence: the iad-ci/skills-validate commit status on the
+  # reference commit (the human "base" commit under the CI-authored tip)
+  # verifies even when the controller has already deleted every workflow —
+  # the 2026-10 false alarm — and kubectl is never consulted.
+  local ref_sha
+  ref_sha="$(git -C "$PUSH_CI_DIR/clone" rev-parse HEAD~1)"
+  write_wf_listing
+  write_statuses "iad-ci/skills-validate|pending" "iad-ci/skills-validate|success"
+  expect_exit 0 "commit status on the reference commit → 0 with zero workflows on record" run_push_ci
+  expect_ok "status lookup asked for the reference commit's full SHA" \
+    grep -q "/commits/$ref_sha/statuses" "$PUSH_CI_DIR/curl.argv"
+  expect_ok "status hit never consulted kubectl" test ! -e "$PUSH_CI_DIR/.kubectl-called"
+  expect_ok "API token reached curl on stdin" \
+    grep -qx "Authorization: token $PUSH_CI_FIXTURE_TOKEN" "$PUSH_CI_DIR/curl.stdin"
+  expect_ok "API token never appeared in curl argv" \
+    bash -c "! grep -q '$PUSH_CI_FIXTURE_TOKEN' '$PUSH_CI_DIR/curl.argv'"
+
+  # Any state proves delivery: a red validation is the suites' verdict, not
+  # a dead webhook path.
+  write_statuses "iad-ci/skills-validate|failure"
+  expect_exit 0 "failure-state commit status still proves delivery → 0" run_push_ci
+
+  # Another context (e.g. a different CI) is not this path's evidence.
+  write_statuses "seam-lint|success"
+  expect_exit 1 "only a foreign-context status + no workflow → 1" run_push_ci
+
+  # Unreadable status API: environmental unless the fallback verifies.
+  PUSH_CI_CURL_FAIL=1 expect_exit 2 "status API unreachable + no workflow → 2 (not the alarm)" run_push_ci
+  unset PUSH_CI_CURL_FAIL PUSH_CI_CURL_CODE
+  PUSH_CI_CURL_CODE=403 expect_exit 2 "status API 403 + no workflow → 2 (not the alarm)" run_push_ci
+  unset PUSH_CI_CURL_FAIL PUSH_CI_CURL_CODE
+  printf '{"message":"not a list"}' >"$PUSH_CI_DIR/statuses.json"
+  expect_exit 2 "malformed status list + no workflow → 2 (not the alarm)" run_push_ci
+  write_wf_listing "skills-validate-live|skills-validate-|2026-09-14T12:30:00Z"
+  PUSH_CI_CURL_FAIL=1 expect_exit 0 "status API unreachable + live sensor workflow → 0 (fallback)" run_push_ci
+  unset PUSH_CI_CURL_FAIL PUSH_CI_CURL_CODE
+  write_wf_listing "skills-validate-stale|skills-validate-|2026-09-14T11:30:00Z"
+  PUSH_CI_CURL_FAIL=1 expect_exit 2 "status API unreachable + stale workflow → 2 (not the alarm)" run_push_ci
+  unset PUSH_CI_CURL_FAIL PUSH_CI_CURL_CODE
+  write_statuses # back to "API answered, nothing posted"
 
   # A repo without origin/main is environmental, not an alarm.
   expect_exit 2 "no origin/main → 2" bash -c \
