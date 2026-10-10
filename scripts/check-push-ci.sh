@@ -250,12 +250,14 @@ status_code="$(forgejo_get "$status_url" "$work_tmp/statuses.json" 2>"$work_tmp/
 status_rc=$?
 if (( status_rc == 0 )) && [[ "$status_code" == 200 ]]; then
   # Newest status of our context: state, target_url (two lines), or nothing.
+  # Forgejo's response names the state "status" (the request body calls it
+  # "state"); accept either.
   if status_data="$(jq -r --arg ctx "$STATUS_CONTEXT" '
       if type != "array" then error("not a status list") else . end
       | [.[] | select(.context == $ctx)]
       | sort_by(.id // 0)
       | last
-      | if . == null then empty else (.state // ""), (.target_url // "") end
+      | if . == null then empty else (.status // .state // ""), (.target_url // "") end
     ' "$work_tmp/statuses.json" 2>/dev/null)"; then
     status_lookup="ok"
   fi

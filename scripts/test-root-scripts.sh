@@ -292,7 +292,8 @@ PUSH_CI_AUTHOR="Fixture Author"
 # curl on stdin and never in argv.
 PUSH_CI_FIXTURE_TOKEN="fixture-token-not-a-credential"
 
-# Emit a Forgejo commit-status list. Each argument is "context|state"; ids
+# Emit a Forgejo commit-status list in the API's response shape (the state
+# is in "status"). Each argument is "context|state"; ids
 # ascend in argument order. No arguments yields "[]" (API answered, nothing
 # posted) — the default, so the workflow-listing fixtures below judge alone.
 write_statuses() {
@@ -304,7 +305,7 @@ write_statuses() {
     id=$((id + 1))
     local ctx state
     IFS='|' read -r ctx state <<<"$item"
-    printf '{"id":%d,"context":%s,"state":%s,"target_url":"https://argo-ci.example/wf-%d"}' \
+    printf '{"id":%d,"context":%s,"status":%s,"target_url":"https://argo-ci.example/wf-%d"}' \
       "$id" "$(jq -Rn --arg v "$ctx" '$v')" "$(jq -Rn --arg v "$state" '$v')" "$id" >>"$out"
   done
   printf ']' >>"$out"
@@ -411,6 +412,9 @@ run_push_ci() {
 }
 
 kubectl_was_called() { [[ -e "$PUSH_CI_MARKER" ]]; }
+
+# Run the heartbeat and grep its combined output for an ERE.
+push_ci_output_has() { run_push_ci 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -Eq "$1"; }
 
 # Assert a command exits with the expected code; print its tail on failure.
 expect_exit() {
@@ -2088,6 +2092,8 @@ test_push_ci_contracts() {
   write_wf_listing
   write_statuses "iad-ci/skills-validate|pending" "iad-ci/skills-validate|success"
   expect_exit 0 "commit status on the reference commit → 0 with zero workflows on record" run_push_ci
+  expect_ok "newest status's state is reported (success, not pending/unknown)" \
+    push_ci_output_has 'iad-ci/skills-validate on [0-9a-f]*: success$'
   expect_ok "status lookup asked for the reference commit's full SHA" \
     grep -q "/commits/$ref_sha/statuses" "$PUSH_CI_DIR/curl.argv"
   expect_ok "status hit never consulted kubectl" test ! -e "$PUSH_CI_DIR/.kubectl-called"
