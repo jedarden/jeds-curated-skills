@@ -162,13 +162,13 @@ patterns of high-quality work. They cover the agent-driven development lifecycle
 spec through release.
 
 The canonical inventory is [docs/skill-inventory.md](docs/skill-inventory.md): this repository
-currently contains 16 skills, comprising 15 lifecycle skills and the auxiliary
-`usage-statusline` observer. Every skill has a `SELF-TEST.md`; the fixture suite replays 10
-script fixtures across 9 skills. The inventory and lifecycle-coverage check runs
+currently contains 19 skills, comprising 18 lifecycle skills and the auxiliary
+`usage-statusline` observer. Every skill has a `SELF-TEST.md`; the fixture suite replays 12
+script fixtures across 11 skills. The inventory and lifecycle-coverage check runs
 as part of `scripts/validate-skills.sh`—the same suite invoked by push CI—so
 these counts, the lifecycle map, and the headings below cannot drift.
 
-<!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
+<!-- skill-inventory: total=19 lifecycle=18 auxiliary=1 self-tests=19 fixture-skills=11 fixture-scripts=12 -->
 
 ### Plan & design
 
@@ -210,6 +210,19 @@ Handles greenfield, port, improvement, integration, migration/cutover, and spike
 `scripts/find-forks.sh` is a line-anchored locator for deferred, hedged, shadowed, amended, and
 unquantified decisions.
 
+#### `plan-to-bead`
+
+Decomposes an approved plan.md into a dependency-wired bead graph, one owner per
+independently deliverable outcome.
+
+Detects the repo's bead backend before writing anything, drafts single-task beads — never a
+bundle, never an unresolved decision masquerading as work — then runs a bounded independent
+review child that checks coverage, scoping, and real dependency edges before anything is
+reported done. Also runs standalone against a repo that already has a full bead graph,
+auditing it for the same three properties without creating duplicates.
+
+**Usage:** `/plan-to-bead [path/to/plan.md]`
+
 #### `plan-idea-gen`
 
 Wide-then-narrow ideation anchored to a specific plan.md.
@@ -228,12 +241,14 @@ flow into bead tracking and back into the plan's roadmap.
 
 #### `plan-gap-review`
 
-Iterative gap-and-contradiction review of a plan, spec, or design document.
+Reviews a document for consequential gaps, contradictions, and missing pieces.
 
-Fresh-eyes analysis agents hunt contradictions, dangling references, specification gaps,
-and ambiguities that would block implementation. For each gap, a fix agent brainstorms 20
-candidate solutions, ranks them against the document's goal, and applies the best; the
-document is then re-analyzed — looping until a round comes back clean (max 5 rounds).
+Delegates a bounded analysis to a fresh subagent for substantial documents, then applies
+authorized corrections directly — ordinary wording and implementation details without
+re-asking, while a finding that expands scope or needs a new product decision is batched for
+one explicit admit/reject/defer review rather than applied unilaterally. Repeats analysis
+only for changed inputs or a specific unresolved concern, not merely to accumulate
+consecutive clean rounds.
 
 **Usage:** `/plan-gap-review [path/to/document.md]`
 
@@ -303,6 +318,30 @@ and reviews resource modeling, semantics, evolution/versioning, payloads, and se
 the specific anti-pattern behind each finding.
 
 **Usage:** `/api-design-review [path/to/api-definition]`
+
+#### `plan-vs-built`
+
+Checks whether a repo's plan.md deliverables actually exist as working artifacts, not just as
+closed beads.
+
+Sweeps every repo with a plan by default. Classifies each deliverable BUILT / UNPROVEN /
+PARTIAL / STUB / ABSENT / DIVERGENT / PLAN-STALE from observed evidence — a binary that runs, a
+test that fails when broken, a pod that answers — never from prose, commit messages, or bead
+status. Separately audits closed beads against those verdicts and flags false closures: work
+marked done that produced no artifact.
+
+**Usage:** `/plan-vs-built [repo-path-or-plan.md] [--create-beads] [--filter <regex>]`
+
+#### `find-stubs`
+
+Sweeps a repo for leftover stub, mock, and placeholder code — the class of AI-generated
+incompleteness that passes lint and type-check but does nothing real.
+
+Text-pattern detection (TODO/FIXME markers, `unimplemented!()`/`todo!()`, placeholder/fake-data
+comments, silently swallowed errors) across the tree. Report-only by default; converts
+surviving findings into tracked beads on request, deduped against open work.
+
+**Usage:** `/find-stubs [repo-path] [--create-beads]`
 
 #### `readme-review`
 

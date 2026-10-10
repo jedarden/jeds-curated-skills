@@ -3,11 +3,11 @@
 This file is the single decision log and architecture reference for this repo, per the
 workspace's repo convention. It was created retroactively on 2026-07-20 — the repo shipped
 14 skills over Jun 25–Jul 19 without a `docs/plan/plan.md`; the current canonical inventory is
-16 skills (15 lifecycle skills plus the auxiliary `usage-statusline` observer). This file starts
+19 skills (18 lifecycle skills plus the auxiliary `usage-statusline` observer). This file starts
 honest rather than fabricating a plan-of-record after the fact. It grows forward from here as an
 ADR log. See [docs/skill-inventory.md](../skill-inventory.md) for the source of truth.
 
-<!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
+<!-- skill-inventory: total=19 lifecycle=18 auxiliary=1 self-tests=19 fixture-skills=11 fixture-scripts=12 -->
 
 ## What this repo is
 

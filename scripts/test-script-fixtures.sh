@@ -24,6 +24,16 @@
 #   release-readiness  scan-release.sh  fixture-repo facts + dirty tree + usage
 #   diff-review        collect-diff.sh  local-repo modes (no network) + not-a-repo
 #   repo-hygiene       repo_hygiene.sh  seeded violations + clean repo + JSON + usage
+#   find-stubs         find_stubs.sh    4-category fixture + clean repo + JSON + usage
+#                                        (voluntary pin: find_stubs.sh's underscore name
+#                                        doesn't match the find-*.sh ratchet class, but
+#                                        it's the same deterministic text-scan shape as
+#                                        the rest of this table, so it gets real coverage
+#                                        anyway rather than going untested by omission)
+#   plan-vs-built      check-phantom-refs.py  relative + absolute import resolution,
+#                                        PHANTOM/MISSING verdicts, clean-repo zero case
+#                                        (also voluntary: a .py script, outside the .sh
+#                                        ratchet's glob entirely)
 #
 # Replaying pins is only half the net: it fails when a pin EXISTS and drifts,
 # so a brand-new score-*/scan-* script with no fixture would ship silently —
@@ -197,13 +207,14 @@ skill_script() { # skill script... -> path inside this checkout
 # means deleting its entry: a stale entry fails the ratchet.
 FIXTURE_EXEMPT=(
   'plan-review/scripts/score-plan.sh' # deprecated + unreferenced: SKILL.md wires only find-forks.sh and scan-headers.sh, and plan-review/SELF-TEST.md "Structure" pins that state
+  'plan-vs-built/scripts/collect-evidence.sh' # needs a real $HOME/declarative-config checkout, Argo CI template references, container VERSION files and a plausible bead store to produce a meaningful snapshot; a mktemp sandbox fixture would either fake those externalities (false confidence) or exercise only the trivial usage-error path. plan-vs-built/SELF-TEST.md documents the honest manual exercise instead. sweep.sh is a thin parallel wrapper around this same script and isn't in the ratchet's class patterns at all.
 )
 
 # Fixture-class scripts in existence today. Raise by one when adding a script
 # (in the same commit as its fixture); lower it only deliberately when
 # removing one. A drop to zero-or-few without a matching edit means the
 # enumeration broke, not that coverage shrank.
-FIXTURE_CLASS_FLOOR=11
+FIXTURE_CLASS_FLOOR=12
 
 ratchet_fixture_coverage() {
   echo ""
@@ -982,6 +993,130 @@ test_diff_review() {
 }
 
 # ---------------------------------------------------------------------------
+# find-stubs — find_stubs.sh (SELF-TEST.md "Script Smoke Tests", Test 1 + 3)
+# ---------------------------------------------------------------------------
+
+test_find_stubs() {
+  echo ""
+  echo "=== find-stubs: find_stubs.sh fixtures ==="
+  local sc
+  sc="$(skill_script find-stubs find_stubs.sh)"
+  local w="$WORK/find-stubs"
+  mkdir -p "$w"
+  (
+    cd "$w"
+    git -c init.defaultBranch=main init -q
+    git config user.email "github@jedarden.com"
+    git config user.name "jedarden"
+    printf 'def add(a, b):\n    return a + b\n' > clean.py
+    printf 'fn compute() -> i32 {\n    todo!()\n}\n' > stubby.rs
+    # empty-catch-swallow is a single-line pattern (except\s*:\s*pass\s*$) --
+    # a two-line try/except with a typed exception does not match it.
+    printf 'def risky():\n    try:\n        do_thing()\n    except: pass\n' > swallow.py
+    printf '# TODO: wire real auth\ndef placeholder_config():\n    return {"key": "hardcoded for now"}\n' > notes.py
+    git add clean.py stubby.rs swallow.py notes.py && git commit -qm "seed fixture"
+  )
+
+  run_capture bash "$sc" "$w"
+  assert_rc 1 "fixture repo exits 1"
+  assert_has "4 findings total" "4 findings"
+  assert_has "leftover-todo category" "--- leftover-todo (1) ---"
+  assert_has "leftover-todo hit" "notes.py:1: # TODO: wire real auth"
+  assert_has "explicit-unimplemented category" "--- explicit-unimplemented (1) ---"
+  assert_has "explicit-unimplemented hit" "stubby.rs:2: todo!()"
+  assert_has "empty-catch-swallow category" "--- empty-catch-swallow (1) ---"
+  assert_has "empty-catch-swallow hit" "swallow.py:4: except: pass"
+  assert_has "placeholder-marker category" "--- placeholder-marker (1) ---"
+  assert_has "placeholder-marker hit" 'notes.py:3: return {"key": "hardcoded for now"}'
+
+  run_capture bash "$sc" "$w" --json
+  assert_rc 1 "JSON mode exits 1 on findings"
+  assert_has "JSON: count 4" '"count": 4'
+  assert_has "JSON: empty-catch-swallow category" '"category": "empty-catch-swallow"'
+
+  local clean="$WORK/find-stubs-clean"
+  mkdir -p "$clean"
+  (
+    cd "$clean"
+    git -c init.defaultBranch=main init -q
+    git config user.email "github@jedarden.com"
+    git config user.name "jedarden"
+    printf 'def add(a, b):\n    return a + b\n' > ok.py
+    git add ok.py && git commit -qm "clean baseline"
+  )
+  run_capture bash "$sc" "$clean"
+  assert_rc 0 "clean repo exits 0"
+  assert_has "clean repo reports 0 findings" "0 findings"
+
+  run_capture bash "$sc" "$WORK/nope"
+  assert_rc 2 "usage error (missing path) exits 2"
+}
+
+# ---------------------------------------------------------------------------
+# plan-vs-built — check-phantom-refs.py (SELF-TEST.md "check-phantom-refs.py
+# fixture"; sweep.sh/collect-evidence.sh stay manual per FIXTURE_EXEMPT above)
+# ---------------------------------------------------------------------------
+
+test_plan_vs_built() {
+  echo ""
+  echo "=== plan-vs-built: check-phantom-refs.py fixture ==="
+  local sc
+  sc="$(skill_script plan-vs-built check-phantom-refs.py)"
+  local w="$WORK/phantom"
+  mkdir -p "$w/pkg"
+  (
+    cd "$w"
+    git -c init.defaultBranch=main init -q
+    git config user.email "github@jedarden.com"
+    git config user.name "jedarden"
+    : > pkg/__init__.py
+    printf 'def run():\n    return 1\n' > pkg/helper.py
+    printf 'from .helper import run\nfrom .untracked_sibling import thing\nfrom .ghost_missing import other\n' > pkg/main.py
+    git add pkg/__init__.py pkg/helper.py pkg/main.py
+    git commit -qm "relative-import baseline: one resolves, two dangle"
+    echo "existing but untracked" > pkg/untracked_sibling.py
+  )
+
+  run_capture python3 "$sc" "$w"
+  assert_rc 0 "text scan exits 0 (findings are data, not failure)"
+  assert_has "1 PHANTOM reference" "1 PHANTOM reference(s)"
+  assert_has "PHANTOM detail: relative import, untracked sibling" "pkg/main.py:2 -> pkg/untracked_sibling.py"
+  assert_has "1 MISSING reference" "1 MISSING reference(s)"
+  assert_has "MISSING detail: relative import, nothing on disk" "pkg/main.py:3 -> pkg/ghost_missing"
+  assert_not_has "resolved relative import (line 1) is not a finding" "pkg/main.py:1"
+
+  run_capture python3 "$sc" "$w" --json
+  assert_rc 0 "JSON scan exits 0"
+  assert_has "JSON: phantom 1" '"phantom": 1'
+  assert_has "JSON: missing 1" '"missing": 1'
+
+  local clean="$WORK/phantom-clean"
+  mkdir -p "$clean/pkg"
+  (
+    cd "$clean"
+    git -c init.defaultBranch=main init -q
+    git config user.email "github@jedarden.com"
+    git config user.name "jedarden"
+    : > pkg/__init__.py
+    printf 'def run():\n    return 1\n' > pkg/helper.py
+    printf 'from .helper import run\nfrom pkg.helper import run as run2\n' > pkg/main.py
+    git add -A && git commit -qm "clean: relative and absolute refs both resolve"
+  )
+  run_capture python3 "$sc" "$clean"
+  assert_rc 0 "clean repo exits 0"
+  assert_has "clean repo reports no dangling refs" "no tracked file references an untracked or missing local path"
+
+  run_capture python3 "$sc" "$WORK/nope"
+  assert_rc 2 "usage error (missing path) exits 2"
+  assert_has "missing-path error names the directory" "error: not a directory:"
+
+  mkdir -p "$WORK/plain-dir"
+  run_capture python3 "$sc" "$WORK/plain-dir"
+  assert_rc 2 "usage error (existing dir, not a git repo) exits 2"
+  assert_has "not-a-repo error names it" "error: not a git repository:"
+}
+
+# ---------------------------------------------------------------------------
 # repo-hygiene — repo_hygiene.sh (SELF-TEST.md "Script Smoke Tests", Test 3
 # minus the dead-CI seeding: creating .github/workflows/* is prohibited in
 # this workspace, so dead-ci-workflows stays the one unexercised detector)
@@ -1061,6 +1196,8 @@ main() {
   test_plan_author
   test_readme_review
   test_api_design_review
+  test_find_stubs
+  test_plan_vs_built
   test_test_plan_review
   test_release_readiness
   test_diff_review

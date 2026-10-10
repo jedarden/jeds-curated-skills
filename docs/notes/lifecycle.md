@@ -3,7 +3,7 @@
 This document maps the agent-driven software development lifecycle to the specific skills to invoke at each stage.
 
 The canonical inventory is [../skill-inventory.md](../skill-inventory.md). The lifecycle contains
-15 skills; `usage-statusline` is the one auxiliary observer and is documented in the inventory
+18 skills; `usage-statusline` is the one auxiliary observer and is documented in the inventory
 but is not an SDLC stage.
 
 The map has a completeness gate: the full validator discovers every repository directory that
@@ -11,7 +11,7 @@ contains `SKILL.md` and requires its exact name to appear in this document or in
 explicit non-SDLC whitelist. A skill that is not an SDLC stage must be recorded as such; the
 current exception is `usage-statusline`.
 
-<!-- skill-inventory: total=16 lifecycle=15 auxiliary=1 self-tests=16 fixture-skills=9 fixture-scripts=10 -->
+<!-- skill-inventory: total=19 lifecycle=18 auxiliary=1 self-tests=19 fixture-skills=11 fixture-scripts=12 -->
 
 ## Overview Flow
 
@@ -45,10 +45,13 @@ a sequence they don't have. Where they attach:
 
 - **`plan-gap-review`** — on any plan, spec, or design doc that needs fresh-eyes gap/contradiction polishing: typically on the freshly authored plan before the `plan-review` gate, and again after any major revision (Pre-Implementation Phase; Continuous Practices)
 - **`plan-idea-gen`** — once a plan.md exists to anchor it: after `plan-author`, when you want a wide-then-narrow idea pool for that specific plan (Pre-Implementation Phase; Continuous Practices)
+- **`plan-to-bead`** — after `plan-review`, converting the approved plan into a dependency-wired bead graph before implementation starts; also a standalone audit of an existing graph (Pre-Implementation Phase)
 - **`adr`** — companion to `plan-review --lock`, for a decision that surfaces after the plan is locked (Cross-Cutting Skills; also the Post-Incident Workflow)
 - **`migration-runbook`** — at cutover, when the release being gated is itself a migration (Release & Operations Phase)
 - **`readme-review`** — whenever README changes, and re-checked at pre-release (Cross-Cutting Skills; Continuous Practices)
 - **`repo-hygiene`** — recurring maintenance, no fixed stage (Cross-Cutting Skills; Continuous Practices)
+- **`plan-vs-built`** — periodic audit of whether plan deliverables are actually built, not just beaded as closed; sweeps every repo with a plan by default (Cross-Cutting Skills; Continuous Practices)
+- **`find-stubs`** — periodic sweep for incomplete/stub/placeholder code that passes lint but does nothing real (Cross-Cutting Skills; Continuous Practices)
 
 ## Branch Points
 
@@ -92,6 +95,7 @@ The skills auto-detect plan type from context or prompt.
 | **Plan Review** | `plan-review` | Pre-flight check of plan.md before implementation or bead decomposition; produces a decision ledger and a `--lock` path that writes accepted decisions into the plan |
 | **Gap Analysis** | `plan-gap-review` | Iterative gap/contradiction review of a plan, spec, or design doc — typically on the freshly authored plan before the `plan-review` gate, and after major revisions |
 | **Idea Generation** | `plan-idea-gen` | Once a plan.md exists to anchor it — after `plan-author` — when you need a large pool of ideas for that specific plan |
+| **Bead Decomposition** | `plan-to-bead` | Converting an approved plan.md into a dependency-wired bead graph, after `plan-review`, before implementation begins; also audits an existing graph for coverage/scoping/dependency correctness |
 
 ### Implementation Phase
 
@@ -122,6 +126,8 @@ The skills auto-detect plan type from context or prompt.
 | **ADR** | For a decision that genuinely arises *after* the plan is locked. An ADR written during implementation is a signal that `plan-review` missed a fork — fold the decision back into `plan.md` with `/plan-review --lock`; the ADR becomes history, not the record |
 | **README Review** | When README changes; ensure docs match project state |
 | **Repo Hygiene** | Audit repository for hygiene debt (committed artifacts, large files, dead workflows) |
+| **Plan vs. Built** | Audit whether a repo's plan deliverables actually exist as working artifacts, not just closed beads — sweeps every repo with a plan by default |
+| **Find Stubs** | Sweep for leftover stub/mock/placeholder code that passes lint but does nothing real |
 | **Usage Statusline** | Install once for live Claude Code usage tracking |
 
 ## Typical Workflows
@@ -201,6 +207,10 @@ These skills can be invoked at any time, independent of the main lifecycle flow:
 - **Idea Generation:** Run `/plan-idea-gen` when you need a large pool of candidate ideas for a specific plan
 - **Migration Planning:** Run `/migration-runbook` whenever you need a reversible migration plan
 - **Repo Hygiene:** Run `/repo-hygiene` periodically to detect and fix technical debt
+- **Plan vs. Built:** Run `/plan-vs-built` periodically (sweeps every repo with a plan by
+  default) to catch deliverables that look done but aren't
+- **Find Stubs:** Run `/find-stubs` periodically across repos to catch AI-generated
+  incompleteness before it accumulates
 - **README Review:** Run `/readme-review` after any user-facing changes
 
 ## Notes
