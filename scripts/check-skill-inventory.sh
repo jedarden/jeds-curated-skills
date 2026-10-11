@@ -70,8 +70,14 @@ if [[ "$(cut -f1 "$canonical" | sort -u | wc -l)" != "$(wc -l < "$canonical")" ]
     fail "canonical inventory contains duplicate skill names"
 fi
 
-find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -name SKILL.md -printf '%h\n' \
-    | sed "s#^$REPO_ROOT/##" | LC_ALL=C sort > "$actual"
+# No `find -printf`: it is a GNU extension, and skills-validate runs this on
+# alpine/git, whose BusyBox find rejects it ("find: unrecognized: -printf"),
+# which failed every iad-ci validation until 2026-10-11 (jedscura-1f3da34a).
+# Strip the file name with parameter expansion, as the SELF-TEST scans below do.
+find "$REPO_ROOT" -mindepth 2 -maxdepth 2 -name SKILL.md -print0 \
+    | while IFS= read -r -d '' skill_file; do
+        printf '%s\n' "${skill_file%/*}"
+    done | sed "s#^$REPO_ROOT/##" | LC_ALL=C sort > "$actual"
 if ! diff -u <(cut -f1 "$canonical") "$actual"; then
     fail "canonical inventory does not match */SKILL.md directories"
 fi

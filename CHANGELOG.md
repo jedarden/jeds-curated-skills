@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **skills-validate green again on iad-ci's BusyBox `find`** (2026-10-11) —
+  `scripts/check-skill-inventory.sh` listed skill directories with GNU
+  `find -printf '%h\n'`. The `validate-skills` step runs in `alpine/git`, whose
+  BusyBox v1.37.0 `find` rejects `-printf` ("find: unrecognized: -printf"), so
+  the inventory check failed on every push (skills-validate-2ht8k on 4fe3ac05)
+  while passing locally on GNU findutils. The listing now uses `-print0` and
+  parameter expansion, as the script's SELF-TEST scans already did; verified
+  identical under BusyBox 1.37.0 and GNU find, and still failing on a stray
+  `*/SKILL.md`. No GNU findutils added to the image.
 - **Push-CI heartbeat judged by evidence the cluster keeps** (2026-10-10) —
   `scripts/check-push-ci.sh` judged delivery by a live `skills-validate`
   workflow, but iad-ci's controller `retentionPolicy` count cap (20 completed /
