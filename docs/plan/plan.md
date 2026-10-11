@@ -103,9 +103,13 @@ cannot source the lib itself).
 - 9 of the skills each carry their own `scripts/score-*.sh` or `scan-*.sh` — front-matter
   parsing, markdown header scanning, and percent/color formatting are reimplemented
   independently in each rather than shared.
-- No CI is wired to this repo (consistent with the workspace-wide GH Actions ban); nothing
-  currently lints the 11 shell scripts, validates `SKILL.md` frontmatter, or checks that files
-  referenced from a `SKILL.md` (checklists, templates, subagent prompts) actually exist.
+- Push CI is wired through the Forgejo webhook sensor to the `skills-validate` Argo
+  WorkflowTemplate. On non-CI-authored pushes to `main`, it runs
+  `scripts/validate-skills.sh` and `scripts/test-script-fixtures.sh`. The separate
+  `push-ci-heartbeat` Argo CronWorkflow runs `scripts/check-push-ci.sh` every 30 minutes
+  (`11,41 * * * *`) to verify delivery of the newest eligible push. The local pre-commit
+  hook also runs `scripts/test-root-scripts.sh`; the workflow does not. LLM-in-the-loop
+  functional `SELF-TEST.md` sections remain manual by design.
 - Push mirror to GitHub (`jedarden/jeds-curated-skills`) is healthy — Forgejo push-mirror
   `sync_on_commit: true`, `last_error: ""`, last synced 2026-07-20T11:09:14Z.
 
@@ -127,10 +131,11 @@ SELF-TEST.md`) is a manual, LLM-in-the-loop runbook that references a path outsi
 (`~/Research/dicklesworthstone-plans/...`) — it cannot run in CI and doesn't generalize to a
 public clone.
 
-Constraints:
-- GitHub Actions are disabled workspace-wide; this repo has no Argo Workflows CI today and,
-  unlike the app repos in the `Available WorkflowTemplates` table, isn't a container build —
-  adding one requires either a new lightweight WorkflowTemplate or a local pre-commit hook.
+Constraints at the 2026-07-20 baseline:
+- GitHub Actions are disabled workspace-wide; this repo had no Argo Workflows CI at that
+  baseline and, unlike the app repos in the `Available WorkflowTemplates` table, isn't a
+  container build — adding one required either a new lightweight WorkflowTemplate or a local
+  pre-commit hook.
 - The repo is public — contributors (and future-us) need fast, cheap, dependency-light
   feedback. Anything requiring an LLM call is out of reach for a pre-commit hook and expensive
   to run on every push.
@@ -159,15 +164,28 @@ checks, per skill:
 4. **Executable bit** — every `scripts/*.sh` referenced from a `SKILL.md` invocation snippet is
    `chmod +x`.
 
-This is wired in two places: (a) as a local `git` pre-commit hook (installed via a
-`scripts/install-hooks.sh` committed alongside it, since hooks themselves aren't versioned by
-git) so a bad skill edit is caught before it's even pushed, and (b) as a new minimal Argo
-WorkflowTemplate (`skills-validate`, added to `declarative-config`'s
-`k8s/iad-ci/argo-workflows/`) triggered on push to this repo, so the check also runs
-server-side for contributions that bypass the local hook. LLM-in-the-loop functional
-self-tests (the `plan-review/SELF-TEST.md` style) remain manual runbooks — explicitly out of
-scope for this harness — and are tracked as a separate follow-on (see beads filed alongside
-this ADR).
+This is wired in two places: (a) as a local `git` pre-commit hook (installed via
+`scripts/install-hooks.sh`, since hooks themselves aren't versioned by git), which runs the
+structural check, root-script contracts, and deterministic script fixtures; and (b) as the
+`skills-validate` Argo WorkflowTemplate in `declarative-config`'s
+`k8s/iad-ci/argo-workflows/`, submitted by the Forgejo webhook sensor for non-CI-authored
+pushes to `main`. The WorkflowTemplate runs the structural check and deterministic script
+fixtures. LLM-in-the-loop functional self-tests (the `plan-review/SELF-TEST.md` style) remain
+manual runbooks by design.
+
+### Verified operation (2026-10-11)
+
+The push path was verified by sensor-generated Workflow `skills-validate-qk79k`, which
+succeeded for commit `1956088` and posted the `iad-ci/skills-validate` commit status. The
+`push-ci-heartbeat` Argo CronWorkflow runs `scripts/check-push-ci.sh` on schedule
+`11,41 * * * *` (every 30 minutes); it checks delivery of the newest eligible `origin/main`
+commit using that status, with a sensor-generated `skills-validate` Workflow as fallback.
+Scheduled Workflow `push-ci-heartbeat-1791652260` succeeded on 2026-10-10 after the check
+was changed to use the durable commit status. The heartbeat verifies event-to-workflow
+delivery; it does not execute the skill suites. The WorkflowTemplate's two suites are
+`scripts/validate-skills.sh` and `scripts/test-script-fixtures.sh`; the local pre-commit hook
+also runs `scripts/test-root-scripts.sh`. Full functional SELF-TEST sections requiring an
+LLM remain manual.
 
 ### Considered Alternatives
 
@@ -213,9 +231,8 @@ this ADR).
   schema, `SKILL.md` references must be exact filenames) that slightly constrains how future
   `SKILL.md` files can be written — e.g. a checklist mentioned only in prose without its exact
   filename could false-positive as a broken reference and needs an allowlist escape hatch.
-  Server-side enforcement depends on a new Argo WorkflowTemplate landing in
-  `declarative-config`, which is a separate PR/sync in another repo, not something this commit
-  alone delivers.
+  Server-side enforcement required a separate declarative-config change at the time of this
+  ADR; that dependency has since landed and the push path is verified above.
 - **Follow-on work:** (tracked as beads, label `artifact-improvement`) shared bash utility
   library to deduplicate the 9 `score-*.sh`/`scan-*.sh` scripts; installed-copy drift checker;
   per-skill `version:` field + root `CHANGELOG.md`; root `install.sh` for selective,

@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unexercised.
 
 ### Changed
+- **Document the verified push-CI contract** (2026-10-11) — README and ADR-1 now distinguish
+  the three local pre-commit suites from the two suites run by the sensor-submitted
+  `skills-validate` WorkflowTemplate on non-CI pushes to `main`. They also describe the
+  `push-ci-heartbeat` CronWorkflow schedule (`11,41 * * * *`), which checks push-to-workflow
+  delivery, and keep LLM-in-the-loop `SELF-TEST.md` sections explicitly manual. Evidence:
+  `skills-validate-qk79k` succeeded with `iad-ci/skills-validate=success` on commit `1956088`;
+  scheduled Workflow `push-ci-heartbeat-1791652260` succeeded on 2026-10-10.
 - **Stale inlines are drift** (2026-09-16) — the inline excusal in
   `check-installed.sh` was marker-based: any installed copy carrying the
   "Inlined from lib/common.sh" marker passed the repo diff, so a `lib/common.sh`

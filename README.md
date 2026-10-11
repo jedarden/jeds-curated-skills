@@ -124,41 +124,50 @@ The drift checker detects the same issue that motivated this repo's own ADR-1: t
 
 ## Testing
 
-Three suites run before each commit (via the pre-commit hook installed by `scripts/install-hooks.sh`) and on every push to `main` (via the `skills-validate` Argo WorkflowTemplate, which triggers on push through the Forgejo webhook sensor):
+When installed with `scripts/install-hooks.sh`, the local pre-commit hook runs three suites:
 
 | Suite | Covers |
 |-------|--------|
-| `scripts/validate-skills.sh` | Static structure per ADR-1: frontmatter schema, reference integrity, `bash -n`, executable bits, ShellCheck baseline ratchet |
-| `scripts/test-root-scripts.sh` | Documented root-script contracts, including isolated installer preservation/idempotence, shared-helper execution, usage-statusline settings preservation, and the factory-review timer lifecycle fixtures |
-| `scripts/test-script-fixtures.sh` | The per-skill `SELF-TEST.md` script fixtures: each score/scan script's heredoc fixture replayed mechanically against its pinned counts, MISSING lists, and exit codes — any mismatch fails the commit or the push |
+| `scripts/validate-skills.sh` | Skill structure: frontmatter, references, shell syntax, executable bits, and inventory/fixture coverage. ShellCheck is optional and is skipped when unavailable. |
+| `scripts/test-root-scripts.sh` | Root-script contracts, including installer preservation and idempotence, shared-helper execution, settings preservation, and timer lifecycle fixtures. |
+| `scripts/test-script-fixtures.sh` | Deterministic replays of the script fixtures documented in `SELF-TEST.md`, checked against their pinned outputs. |
 
-The push path itself has an external heartbeat: `scripts/check-push-ci.sh`
-runs every 30 minutes in `iad-ci` (the `push-ci-heartbeat` Argo CronWorkflow
-in declarative-config, `k8s/iad-ci/argo-workflows/`), which clones this repo
-and confirms the newest non-CI-authored `origin/main` push carries the
-`iad-ci/skills-validate` Forgejo commit status — posted on the pushed SHA
-only by a sensor-submitted `skills-validate` run (pending when it starts,
-then its final state), so it survives the cluster deleting the workflow
-object within the hour. A live sensor-submitted workflow created after the
-push is accepted as a fallback. The status's state is the skills verdict;
-any state proves delivery. Only the script's
-exit 1 (path dead — pushes landing unvalidated) fails the run and turns it
-red; exit 2 (cannot judge) and exit 3 (inside the grace window) are recorded
-and stay green. The check is still runnable by hand the same way; it waits
-through a 15-minute delivery grace window by default — use `--grace-minutes 0`
-when the push is already old enough to judge. A passing check covers the
-Forgejo route, JetStream delivery, sensor trigger, and Workflow submission
-together.
+### Push CI
 
-To run any of them by hand:
+For non-CI-authored pushes to `main`, the Forgejo webhook sensor submits the
+`skills-validate` Argo WorkflowTemplate. It runs `scripts/validate-skills.sh`
+and `scripts/test-script-fixtures.sh`. The `validate-skills` workflow image does
+not include ShellCheck, so that optional lint check reports a skip there. The
+local hook adds `scripts/test-root-scripts.sh`.
+
+### Scheduled delivery check
+
+The `push-ci-heartbeat` Argo CronWorkflow runs `scripts/check-push-ci.sh` in
+`iad-ci` on schedule `11,41 * * * *` (every 30 minutes). It checks whether the
+newest eligible `origin/main` commit has the `iad-ci/skills-validate` Forgejo
+commit status, with a sensor-submitted `skills-validate` workflow as a fallback.
+This heartbeat checks push-to-workflow delivery. The path was verified by
+successful sensor workflow `skills-validate-qk79k` on commit `1956088` and
+scheduled heartbeat `push-ci-heartbeat-1791652260` (2026-10-10).
+
+### Functional SELF-TEST sections
+
+The LLM-in-the-loop functional sections of each skill's `SELF-TEST.md` remain
+manual runbooks by design. The automated fixture step replays deterministic
+script cases; functional runs requiring an LLM stay manual.
+
+### Run locally
+
+Run the suites by hand with:
 
 ```bash
-./scripts/test-review-timers.sh     # focused installer/lifecycle fixture
-./scripts/test-root-scripts.sh      # all root-script contract fixtures
-./scripts/test-script-fixtures.sh  # ~3s, no network, no LLM
+./scripts/validate-skills.sh
+./scripts/test-root-scripts.sh
+./scripts/test-script-fixtures.sh
+./scripts/test-review-timers.sh     # focused installer/lifecycle fixtures
 ```
 
-The fixture suite is the regression net for the shared `lib/common.sh` extraction: every fixture passes identically against the pre- and post-extraction scripts, so a behavior change in the shared helpers (or in any scorer) surfaces as a named failing pin instead of a silent count drift. The LLM-in-the-loop functional sections of each `SELF-TEST.md` stay manual runbooks by design and are not covered here.
+The fixture suite is the regression net for the shared `lib/common.sh` extraction: each fixture pins behavior so changes in the shared helpers or a scorer surface as a named failure instead of a silent count drift.
 
 ## Skills
 
