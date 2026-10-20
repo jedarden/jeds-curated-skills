@@ -32,8 +32,18 @@ idempotent/resumable steps, shadow/canary comparison, cutover trigger, and post-
 retirement; Spike → measurable question, thresholds, environment, time box, decision record,
 and inconclusive default).
 
+You receive exactly one type. If the brief reads as several (port + migration + integration +
+new features), the parent chose the first-shipping type; the others go in §2 as **held**
+non-goals, each with the entry gate that opens it. Do not fold them back into the phase table.
+
 ### Step 2: Draft Top-Down, Decisions First
-Write the sections in template order. Two rules govern every section:
+Write the sections in template order. Three rules govern every section:
+- **First slice first.** Phase 0 goes through the riskiest real dependency (the real broker,
+  cluster or upstream API) via a path that can be re-run on demand without a production event,
+  and for a Port or Migration it retires or shadows one legacy capability. Documents, inventories
+  and contracts are not a Phase 0. §10.3 names the oracle that stands in for production as a
+  command; if none exists, §16 carries "how do we build the oracle before Phase 0?" and the
+  report says the plan is not ready until it is answered.
 - **Decide.** Pick a concrete component name, a real storage choice, an explicit concurrency
   model. A plan full of options is not a plan. When you choose, also write the one-line reason
   in §6.4 / the ADR-style note so the choice is defensible.
@@ -54,16 +64,20 @@ write "TBD". Add a numbered entry to §16 with an owner and a resolve-by phase, 
 number inline where the decision would go: "(see Open Question 3)".
 
 ### Step 5: Type-Specific Sections
-- **Port:** add a parity matrix (location | status | gaps), source metrics, conformance harness,
-  and porting order.
+- **Port:** fill the `Port` subsection of `Type-Specific Requirements` with the measured source
+  metrics, capability slices (one retired or shadowed legacy path per phase, with a size cap),
+  the conformance oracle as a command, the porting order, and the not-ported list; add a parity
+  matrix (location | status | gaps) under §6.
 - **Improvement:** add a gap inventory, an explicit "What We're NOT Changing", behavioral
   regression tests, and rollback-before-rollout criteria.
 - **Integration:** add per-dependency contracts, failure isolation between systems, and rollback
   coordination across both sides.
 - **Migration / Cutover:** fill the `Migration / Cutover` subsection of `Type-Specific Requirements`
   with a backup whose restore is rehearsed, idempotent and resumable steps, a shadow/canary period
-  with a diff oracle, a cutover gate with an explicit rollback trigger, and post-cutover validation
-  plus old-path retirement. These are implementation gates, not Open Questions to omit.
+  with a diff oracle, a cutover gate with an explicit rollback trigger, post-cutover validation
+  plus old-path retirement, and a rehearsal oracle so the cutover path is exercised against a
+  replay, sandbox or shadow before it touches the production dependency. These are implementation
+  gates, not Open Questions to omit.
 - **Spike:** fill the `Spike` subsection of `Type-Specific Requirements` with one measurable
   question, metrics and thresholds, named environment(s), a time box and decide-by gate, where the
   decision is recorded in the plan it informs, and a default if results are inconclusive.
@@ -86,6 +100,8 @@ Sections marked N/A: <list + reason>
 - Never leave a bare "TBD" or "to be determined" in the document body — unknowns go to §16 only.
 - Never invent facts about an existing codebase; for Port/Improvement use only the provided findings.
 - Do not introduce scope the brief did not imply; if tempted, add it to §16 as a question instead.
+- Never write a Phase 0 made of documents, inventories or contracts alone, and never write §10.3
+  as if an oracle existed when the only one is production.
 - Every section the template lists must exist; if truly inapplicable, write "N/A — <reason>".
 - Keep prose terse and declarative. No marketing language. No hedging adjectives.
 - Use the exact heading levels and section numbers from the template so the scorer can find them.

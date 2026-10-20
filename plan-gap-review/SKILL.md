@@ -1,9 +1,10 @@
 ---
 name: plan-gap-review
-version: 2.0.0
+version: 2.1.0
 description: >-
   Review a document for consequential gaps, contradictions, and missing pieces;
-  use bounded delegated analysis, apply authorized corrections, and verify them.
+  use bounded delegated analysis, apply authorized corrections, and verify them,
+  within a round budget that stops when a round opens more gaps than it closes.
   Use when the user wants to review, audit, polish, or find gaps in a plan, spec, or document.
 argument-hint: "[path/to/document.md]"
 allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, TaskCreate, TaskUpdate, TaskList, TaskGet, AskUserQuestion
@@ -62,6 +63,15 @@ required repository review gates. Repeat analysis only for changed inputs, a
 specific unresolved concern, or a required independent check; do not demand two
 identical clean rounds or restart a full review after a cosmetic edit.
 
+**Round budget.** Count, per round, the findings closed and the new findings the
+round's own edits introduced, and the document's net line growth. A round that opens
+more than it closes is the stop signal: report the state, do not run another. Two
+analysis rounds per invocation is the ceiling without changed inputs from outside the
+review. Net growth is a finding in itself — a fix that adds a paragraph where a sentence
+was missing is a scope addition to batch, not a correction. The legacy tradegraph plan
+went through five rounds in one day on 2026-08-21; round two "fixed 23 gaps, most of
+them created by round 1". That loop is what this budget ends.
+
 Finish when the authorized consequential findings are resolved and required checks
 pass, or report a concrete blocker or exhausted agreed budget. Resolve trivial
 in-scope corrections directly; defer low-impact suggestions in the result without
@@ -84,3 +94,4 @@ analysis transcript or count extra rounds as evidence of quality.
 - **Surgical edits**: Fix agents make targeted edits, not rewrites. Preserve existing content.
 - **Outcome ownership**: Keep implementation, verification, and delivery together.
 - **No cosmetic nitpicks**: Focus on gaps that would cause implementation confusion, security issues, or user-facing bugs.
+- **Rounds are budgeted**: a round that opens more than it closes stops the loop; two rounds per invocation without new outside input; net growth is reported, not hidden.

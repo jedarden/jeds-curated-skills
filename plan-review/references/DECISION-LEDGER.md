@@ -93,6 +93,11 @@ own context can move them.
 | 6.7 | **Performance budget & denominator** (numbers; reference hardware; methodology) | M | "3× faster" claims nobody can reproduce | Numbers + how measured + what blocks publication |
 | 6.8 | **Human gates** — which decisions require a person, and when | H | A worker decides architecture; or waits forever | Named gates as explicit blocking work items with a resolve-by phase |
 | 6.9 | **Bead / task decomposability** — can every phase become single-task units? | M | A vague bead claimed twice, implemented twice | Phases written as verb-phrase tasks; no task needs a design call |
+| 6.10 | **Oracle access** — how the highest-stakes behaviour is exercised before cutover | H | The first real test is the live flip; defects surface in production hours after weeks of green suites | A record-and-replay capture, sandbox account, rehearsal environment or shadow comparison named, with the command that runs it on demand (Cap C9) |
+| 6.11 | **Slice scope for ports and migrations** — what the first slice retires | H | Everything is ported before anything is retired; parity is a treadmill of ported tests | First slice names the one legacy capability it retires or shadows; later slices listed with a size cap each (Cap C3) |
+| 6.12 | **First-shipping type of a compound plan** | H | Port + migration + new features on one version; nothing ships until all of it does | One type named as shipping first; other workstreams held behind its acceptance with their own entry gates (Cap C8) |
+| 6.13 | **Plan change budget after decomposition** | M | The plan keeps growing while workers build against it; beads and plan diverge | Amendments after decomposition re-run the decomposition audit; deliverables added to the plan get beads in the same change |
+| 6.14 | **Inner-loop verification cost** | M | Every bead close runs the full clean-extraction suite; throughput collapses into gate ceremony | A per-change check bounded in minutes; the full gate per release, not per bead |
 
 ## 7. House rules (read them, never hardcode them)
 

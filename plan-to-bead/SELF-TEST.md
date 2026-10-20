@@ -23,7 +23,39 @@ SKILL_DIR="$HOME/.claude/skills/plan-to-bead"
 ls -1 "$SKILL_DIR"              # SKILL.md SELF-TEST.md
 grep -q '^allowed-tools:.*TaskCreate' "$SKILL_DIR/SKILL.md" && echo "ok: bounded-child tooling present"
 grep -q 'never create a decision bead' "$SKILL_DIR/SKILL.md" && echo "ok: hard rule present"
+grep -q 'Review gate (hard)' "$SKILL_DIR/SKILL.md" && echo "ok: review gate present"
+grep -q 'Bead the first slice and the phase after it' "$SKILL_DIR/SKILL.md" && echo "ok: two-phase rule present"
+grep -q 'split at most once' "$SKILL_DIR/SKILL.md" && echo "ok: split discipline present"
+grep -q 'Plan drift (audit mode)' "$SKILL_DIR/SKILL.md" && echo "ok: drift audit present"
 ```
+
+## Review-gate fixture (hard pin)
+
+The decomposition fixture below has **no** `docs/notes/plan-review-*.md` beside it. The
+first thing a run must do after reading the plan is stop at Step 2's review gate and
+say to run `/plan-review` — zero beads drafted, zero created. Then plant a memo and
+confirm the gate opens or stays shut by verdict:
+
+```bash
+T="$(cat /tmp/plan-to-bead-selftest-dir)"; mkdir -p "$T/docs/notes"
+printf '# Plan Review: Digest Export Service\n\n**Verdict:** NOT READY\n**Reviewed:** 2026-10-20 by plan-review 2.1\n\nCap C3: Phase 1 never touches the real export target.\n' \
+  > "$T/docs/notes/plan-review-2026-10-20.md"
+# → still stops, names Cap C3
+sed -i 's/NOT READY/READY/' "$T/docs/notes/plan-review-2026-10-20.md"
+# → proceeds to Step 3
+```
+
+**Expected:** no memo → stop; `NOT READY` → stop with the cap named; `READY` → proceed.
+"Turn this plan into beads" is never read as an override; only an explicit user
+instruction is, and it is recorded on the genesis bead verbatim.
+
+## Two-phase fixture (hard pin)
+
+Append five more phases to the fixture plan (`## Phase 2` … `## Phase 6`, one bullet
+each). With a `READY` memo in place, a run creates real beads for Phase 1 and Phase 2
+only, plus exactly **four** placeholder beads (Phases 3–6) labelled `later-phase` and
+`human`, each blocked on the preceding phase's acceptance owner. A run that creates
+real beads for Phase 3 or later fails the pin.
 
 ## Decomposition fixture
 
@@ -106,4 +138,16 @@ Then, LLM in the loop:
   changed nodes and their dependency impact.
 - **Genesis is a fallback, created last** — a durable summary and a record of
   deliberate deferrals, never a substitute for Step 6's verification or a
-  catch-all for gaps the loop should have already closed.
+  catch-all for gaps the loop should have already closed. Its notes carry the
+  decomposition record (plan SHA, line count, memo path and verdict, phases
+  beaded vs. placeholders) that the audit-mode drift check reads.
+- **No review, no beads** — Step 2's review gate stops a run with no
+  plan-review memo or a `NOT READY` verdict before any bead is drafted.
+- **First slice and one more phase** — later phases are single held
+  placeholders; held workstreams of a compound plan get nothing.
+- **Umbrellas are not fleet work** — acceptance owners carry `umbrella` and
+  the dispatcher's `exclude_labels` is checked (and fixed in the same commit).
+- **One split per bead** — a failure is read before it is treated as
+  over-scoping; a second split goes back to the plan as an Open question.
+- **Plan drift is reported** — in audit mode the plan's growth since the
+  recorded decomposition SHA is measured and coverage runs against the diff.

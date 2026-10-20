@@ -62,7 +62,7 @@ EOF
 rm -f "$FIX"
 ```
 
-**Expected (summary line):** `DEFER 1 · HEDGE 2 · SHADOW 2 · AMENDED 2 · UNQUANTIFIED 1 · DECIDED-markers 5`
+**Expected (summary line):** `DEFER 1 · HEDGE 2 · SHADOW 2 · AMENDED 2 · UNQUANTIFIED 1 · PROD-ORACLE 0 · DECIDED-markers 5`
 
 - DEFER 1 → the CI line (`TBD` and "see Open Questions" on one line, counted once). The
   `## Open Questions` heading is excluded — headings are not deferrals.
@@ -72,10 +72,98 @@ rm -f "$FIX"
 - UNQUANTIFIED 1 → `sensible timeout` (knob word, no digit on the line). The backup-interval
   line contains a digit, so it belongs to HEDGE, not here.
 - DECIDED-markers 5 → the Form-1 SQLite line; `MUST NOT`; `decided 2026-07-20`; the ADR header; `Decision: yes`.
+- PROD-ORACLE 0 → nothing in this fixture admits that production is the only test; see the
+  negative fixture below for the positive case.
 
-Also verify the zero-hit case does not crash: `printf '# Tiny\n\nWe build a thing.\n' > t.md && find-forks.sh t.md; echo exit=$?` → all zeros, `exit=0`.
+Also verify the zero-hit case does not crash: `printf '# Tiny\n\nWe build a thing.\n' > t.md && find-forks.sh t.md; echo exit=$?` → all zeros (`… · PROD-ORACLE 0 · DECIDED-markers 0`), `exit=0`.
 
 If the counts differ, a pattern changed; update this table deliberately, never silently.
+
+## Negative fixture — the compound rewrite whose only oracle was production
+
+Cut from the tradegraph-platform plan that was decomposed into 298 beads without a review
+and rolled back ten weeks later (2026-10-20). It is deliberately well-formed: typed, dated,
+phased, gated. Every structural check it would pass is the point — only the caps catch it.
+
+```bash
+SKILL_DIR="$HOME/.claude/skills/plan-review"
+NEG="$(mktemp)"
+cat > "$NEG" <<'EOF'
+# Trading Platform — consolidated architecture and implementation plan
+
+**Type:** Port
+**Status:** v1.20 · **Last updated:** 2026-09-06
+
+## 1. Outcome and scope
+
+### 1.2 Three separately gated workstreams
+
+| Workstream | Outcome |
+|---|---|
+| A — Consolidation and shared infrastructure | Port the research MCP, the journal and the broker service into one platform |
+| B — Expanded intelligence | Event-first discovery, lineage, bridges, ranking |
+| C — Operating readiness | A rehearsed daily workflow and a separately commissioned execution path |
+
+All three ship on one platform version from one repository; every component releases together.
+
+## 13. Operating workflows
+
+### 13.5 Tuesday, September 8 target runbook
+
+This is a requested operating target, not a claim of readiness.
+
+## 14. Migration phases
+
+| Phase | Work | Completion evidence |
+|---|---|---|
+| 0 — Consolidated baseline | This plan, source provenance, requirements, conflict dispositions | Validated documents published |
+| 1 — Inventory, contracts, safety seam | Source baselines; typed read/command/event schemas; identities; old-engine fixtures | Import manifest; denial tests |
+| 2 — Shared broker reads and capture | After 1: extract client/session/cache under one owner | Same-identity read parity |
+| 3 — Execution transport extraction | After 1–2: the execution engine uses shared broker commands | Two-hop response-loss, idempotency, recovery tests |
+| 4 — Unified journal and facade | After 1 | Real-database invariants |
+| 5 — Bounded discovery | After 2/4 | T1/T2 rehearsal |
+| 6 — Advanced intelligence | After 5 | Forward cohorts |
+| 7 — Retirement | After each capability's parity gates | Retirement record |
+
+## 15. Verification and release gates
+
+Sixteen gates, G01–G16, each requiring evidence against the release candidate. Live broker
+mutations require separately scoped commissioning; see §19.6 for why this commissioning runs
+on the single production account rather than a paper account.
+
+## 19. Decision dispositions
+
+### 19.6 Paper commissioning not available; live tests reproduce the legacy broker's capabilities instead
+
+The broker offers no paper account for this entitlement set. Execution behaviour is proven by
+ported legacy unit tests against fixtures, and then by live drills on the production account
+during the cutover window.
+EOF
+"$SKILL_DIR/scripts/find-forks.sh" "$NEG"
+rm -f "$NEG"
+```
+
+**Expected (summary line):** `DEFER 0 · HEDGE 1 · SHADOW 0 · AMENDED 0 · UNQUANTIFIED 1 · PROD-ORACLE 3 · DECIDED-markers 0`
+
+- PROD-ORACLE 3 → `:41` "single production account rather than a paper account"; `:45` the
+  §19.6 heading ("Paper commissioning not available; live tests reproduce"); `:47` "no paper
+  account". Headings are *not* excluded for this category — the admission usually is one.
+- HEDGE 1 → "release candidate" (`candidate`); UNQUANTIFIED 1 → "cutover window" with no
+  number. Both are noise here and show why the locator is not a verdict.
+- The trailing hint names Cap C9.
+
+**LLM in the loop:** `/plan-review` on this fixture must return **NOT READY** with three caps
+tripped and name them in the memo's caps table:
+
+| Cap | Expected | Evidence the memo must cite |
+|---|---|---|
+| C3 | **TRIPPED** | Phase 0 is documents, Phase 1 is contracts; the broker is first touched in Phase 3 |
+| C8 | **TRIPPED** | §1.2: three workstreams, "one platform version from one repository" |
+| C9 | **TRIPPED** | §19.6 and §15: production account is the only oracle; ported tests do not count |
+| C10 | n/a | 49 lines |
+
+Lens C must also flag the §13.5 date: September 8 precedes any phase that could touch the
+broker. A review that returns READY AFTER DECISIONS on this fixture has lost the caps.
 
 ## `scan-headers.sh` fixture test
 

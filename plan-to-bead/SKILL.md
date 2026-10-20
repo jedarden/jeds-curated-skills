@@ -4,7 +4,11 @@ description: >-
   Decompose a plan.md into a fully-wired bead dependency graph via the repo's own bead
   CLI after detecting its backend -- one owner per outcome, dependencies matching
   the plan's real technical relationships, verified for coverage, scoping and
-  dependencies with bounded review. Preserve a repository-required genesis summary
+  dependencies with bounded review. Refuses to decompose a plan that has no plan-review
+  memo or whose memo says NOT READY; beads only the first slice and the phase after it,
+  holding later phases as single placeholders; keeps acceptance umbrellas out of the
+  autonomous frontier; splits a bead at most once; and in audit mode reports plan drift
+  since decomposition. Preserve a repository-required genesis summary
   without using it as a substitute for concrete owners. Also runs as a standalone audit against a repo that
   already has a full bead graph for its plan, to check and fix it without
   creating duplicate beads. Use when the user wants to turn a plan or spec into
@@ -90,6 +94,31 @@ ambiguous or not found. Read it in full.
   escalate only if the backend cannot be established safely.
 - **An existing store's backend wins over the canonical default.** A bf-backed repo stays
   on `bf` for this run; migrating it is separate work, never a side effect of beading.
+- **Review gate (hard).** A plan is decomposed only after `/plan-review` has judged it.
+  Find the newest memo — `docs/notes/plan-review-*.md` for a plan at `docs/plan/plan.md`,
+  otherwise `<plan-dir>/<plan-basename>-review-*.md` — and read its `**Verdict:**` line:
+  - no memo → **stop**. Say so and run `/plan-review` (or `--fast` for a plan under ~150
+    lines) first; do not draft a single bead. A plan can be fully decided, fully gated and
+    still undeliverable, and only the review's caps catch that: the first slice that
+    never touches the real dependency, the compound rewrite on one release train, the
+    plan whose only oracle is production. The 2026-10-20 tradegraph-platform postmortem
+    is a 2,670-line plan cut into 298 beads the day after it was written, never reviewed,
+    rolled back ten weeks later.
+  - `NOT READY` → **stop**; name the cap.
+  - `READY AFTER DECISIONS (n)` → decompose only the phases none of whose `DN-n` entries
+    are still open `DECISION NEEDED` callouts in the plan; hold the rest.
+  - `READY` → proceed.
+  - memo older than the plan's last substantive commit (`git log -1 --format=%cs -- <plan>`
+    vs. the memo's `**Reviewed:**` date) by more than a quarter of the plan's lines
+    (`git diff --numstat <memo-era-sha> HEAD -- <plan>`) → re-review first.
+  The user may override with an explicit instruction; record their words and the skipped
+  verdict on the genesis bead. Never infer an override from "turn this into beads".
+- **Per-close gate cost.** Read what one bead close costs in this workspace (`.needle.yaml`
+  `gates:`, a `definition-of-done` script, the CI template). A per-close gate that rebuilds
+  and tests the whole workspace from a clean extraction turns every close into tens of
+  minutes of ceremony and was the dominant cost in the postmortem above. Do not weaken the
+  gate here; record a throughput finding on the genesis bead proposing a per-package inner
+  loop, and surface it in the report.
 - Check readiness: does the plan specify enough for each phase to decompose into concrete
   work, or are whole sections still "TBD"? If so, say so and suggest `/plan-gap-review` or
   finishing the plan first, rather than beading vague scope -- a vague bead invites
@@ -132,6 +161,33 @@ Walk the plan's implementation phases/sections and enumerate distinct units of w
 draft in your own reasoning or a scratch file first -- not beads yet. This is a *first
 pass*, not the final word -- Step 6 exists specifically because a first pass, even a
 careful one, misses things.
+
+**Bead the first slice and the phase after it. Nothing else.** Phase 0 (the walking
+skeleton through the real dependency) and the next phase are decomposed in full. Every
+later phase gets exactly one placeholder bead — titled after the phase, labelled
+`later-phase` and `human`, blocked on the preceding phase's acceptance owner — and is
+decomposed by re-running this skill when that acceptance closes. Workstreams the plan
+marks as *held* (a compound plan's deferred types, see plan-review Cap C8) get no
+beads at all, not even placeholders. A plan with seven phases therefore yields two
+phases of real beads and five placeholders, never 300 beads on day one: the later phases
+will change once the first slice meets reality, and beads cut from stale text are the
+split-and-reopen churn that follows.
+
+**Acceptance umbrellas are not fleet work.** A bead whose job is to hold a feature's
+acceptance (the "original acceptance umbrella", the integration owner, the G-gate owner)
+gets the `umbrella` label at creation and is closed by a human or by the integration
+owner, never by a worker plucking it. Check that the workspace's dispatcher excludes it:
+`.needle.yaml` → `strands.pluck.exclude_labels` must contain `umbrella` and `human`; if
+the file exists and lacks them, add them in the same commit as the graph; if there is no
+dispatcher config, record on the genesis bead that umbrellas are human-closed. Umbrellas
+left claimable were plucked, verified and released in loops for weeks in the postmortem
+case.
+
+**Dedup is by deliverable, not by wording.** Before accepting a candidate, grep existing
+titles for the deliverable's noun phrase (`bead list --json --limit 10000 | jq -r .title
+| grep -i '<noun phrase>'`); a near-identical open title with different verbs is a
+duplicate. A repo whose open list carries twenty variants of one ask is the failure this
+check exists for.
 
 For each candidate, identify its concrete outcome, acceptance boundary, owner and
 real prerequisites. Split independent deliverables or dependencies that can be
@@ -199,6 +255,16 @@ Return concrete findings with category, severity, bead IDs/plan locations and
 suggested corrections; return concise evidence if none. Do not manufacture issues.
 Use complete structured inputs so omitted edges cannot appear as a clean graph.
 
+**Plan drift (audit mode).** When beads already exist, read the decomposition record on
+the genesis bead (plan path, commit, line count, phases beaded — Step 9) and compare:
+`git diff --numstat <recorded-sha> HEAD -- <plan>`. Added plus removed lines above a tenth
+of the recorded count, or any changed phase or deliverable heading, is **PLAN DRIFT**:
+run coverage against the diff, not the whole plan, and report the numbers. A deliverable
+added to the plan after decomposition either gets its bead in the same change or is held
+in Open questions; it never sits in the plan with no owner while workers build against an
+older version. In the postmortem case the plan grew by 1,151 lines after its beads were
+cut and nobody re-decomposed.
+
 Fix real findings within the authorized scope. Queue scope expansions for one batch
 admission; keep genuinely unresolved forks in Open questions. Recheck changed nodes,
 their dependency impact and any previously failed properties. Broaden review only
@@ -225,6 +291,16 @@ holds to make the frontier look ready. For legacy stores, verify readiness again
 stored blockers using the supported backend; do not trust stale output examples.
 
 ## Step 8: Splitting a bundled bead (invoked from Step 6's fix pass, or any time a scope violation is found)
+
+**Split discipline first.** A bead is split at most once, and only for a scope
+violation found by reading it. A failed or timed-out attempt is not evidence of
+over-scoping: read the attempt record (`bead show ID --json`, notes and attempts) first —
+the work is often already committed, or the failure is environmental — and close or
+release instead. A bead that would need a second split is a plan defect: route the
+question to the plan's Open questions and hold the bead. If the workspace's dispatcher
+auto-splits on failure (`.needle.yaml` `split_after_failures`), set it to `0`; this skill
+is the only splitter. The postmortem graph carried 534 split-children from four rounds
+of re-splitting, with one bead closed ten times.
 
 Closing a bundled bead does *not* safely remove it from the graph: a closed bead
 satisfies its dependents' blocking condition, so closing without first rewiring
@@ -255,6 +331,11 @@ repeat acceptance evidence. Point its body at the plan and live blockers; record
 material decisions, graph changes and deliberate deferrals in readable notes. Use
 the detected backend's current issue-type and dependency syntax. Block it on the
 actual deliverables needed for its stated outcome and keep proposal holds intact.
+
+Its notes always carry the **decomposition record** Step 6's drift check reads: the
+plan path, the plan's commit SHA and line count at decomposition, the review memo path
+and verdict, which phases were beaded and which are placeholders, and any user override
+of the review gate in the user's words.
 
 ## Step 10: Checkpoint, deliver and report
 

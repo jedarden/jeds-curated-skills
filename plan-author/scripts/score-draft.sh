@@ -48,13 +48,16 @@ check "5.3 Invariants"               "invariant" "must always hold" "always hold
 check "5.4 Rollback"                 "rollback" "roll back" "undone" "state.*capture"
 
 # 6. Phasing
-check "6.1 Walking skeleton"         "walking skeleton" "phase 0"
+check "6.1 Walking skeleton"         "walking skeleton" "phase 0" "first slice"
 check "6.2 Phases named"             "phase [0-9]" "phase 1" "### phase"
 check "6.3 Completion criteria"      "completion criteria" "does not include" "exit criteria"
+check "6.4 First slice hits the riskiest dependency" "real dependency exercised" "riskiest" "highest.stakes" "without a production event" "re-?run on demand" "retires or shadows"
 
 # 7. Testing
 check "7.1 Test levels"              "unit" "integration" "testing strategy" "test level"
 check "7.2 Quality gates"            "quality gate" "stop.ship" "definition of done"
+check "7.3 Oracle access"            "oracle" "record.and.replay" "record/replay" "replay harness" "sandbox account" "rehearsal environment" "shadow (comparison|read|run)"
+check "7.4 Inner-loop budget"        "inner.loop" "per.change check" "minutes? per (change|close|bead|task)" "bounded (to|in) [0-9]+ min"
 
 # 8. Security
 check "8.1 Threat model"             "threat model" "threat" "attack" "trivial because"
@@ -81,15 +84,22 @@ check "12.2 Plan B"                  "plan b" "fallback" "if .* proves false" "a
 check "13.1 Open Questions"          "open question" "resolve by" "owner:"
 check "13.2 Revision history"        "revision history" "last updated" "initial draft"
 
-# Type-specific authoring controls. These are conditional so the historical 36-check score for
-# Greenfield/Port/Improvement/Integration fixtures remains stable, while Migration / Cutover and
-# Spike drafts cannot report COMPLETE without the criteria that plan-review judges.
+# Type-specific authoring controls. These are conditional so the 39-check base score for
+# Greenfield/Improvement/Integration fixtures remains stable, while Port, Migration / Cutover
+# and Spike drafts cannot report COMPLETE without the criteria that plan-review judges.
 if grep -qiE '^\*\*Type:\*\*[[:space:]]*(Migration|Cutover)' "$FILE"; then
   check "M.1 Backup and restore rehearsal"          "backup.*restore.*rehears" "restore.*rehears.*backup"
   check "M.2 Idempotent and resumable steps"        "idempotent.*resum" "resum.*idempotent"
   check "M.3 Shadow/canary and diff oracle"         "shadow.*canary.*diff" "canary.*shadow.*diff" "shadow.*diff.*oracle"
   check "M.4 Cutover gate and rollback trigger"     "cutover.*gate.*rollback.*trigger" "rollback.*trigger.*cutover.*gate"
   check "M.5 Post-cutover validation and retirement" "post.cutover.*validat.*retir" "retir.*post.cutover.*validat"
+  check "M.6 Rehearsal oracle"                      "rehearsal oracle" "rehears.*(replay|sandbox|shadow)" "(replay|sandbox|shadow).*rehears"
+elif grep -qiE '^\*\*Type:\*\*[[:space:]]*Port' "$FILE"; then
+  check "P.1 Source metrics"                        "source metrics" "loc by" "lines of code"
+  check "P.2 Capability slices retire legacy paths" "capability slices" "slice.*(retire|shadow)" "(retire|shadow).*(one|single|per) (legacy|existing) (path|capability|route|tool)"
+  check "P.3 Conformance oracle"                    "conformance (harness|oracle|suite)" "golden"
+  check "P.4 Porting order"                         "porting order" "dependency layer"
+  check "P.5 Not-ported list"                       "not.ported" "explicitly (not|never) ported" "left behind"
 elif grep -qiE '^\*\*Type:\*\*[[:space:]]*Spike' "$FILE"; then
   check "S.1 Measurable question"                  "question.*measurement" "measurement.*question"
   check "S.2 Metrics and thresholds"               "metrics.*threshold" "threshold.*metrics"

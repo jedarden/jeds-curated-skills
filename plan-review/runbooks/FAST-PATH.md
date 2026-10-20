@@ -12,8 +12,11 @@ lines. Output is a verdict and the forks, not a memo. No structural sweep.
    ~/.claude/skills/plan-review/scripts/find-forks.sh <plan>
    ```
    Every DEFER and SHADOW hit is a candidate fork; every UNQUANTIFIED hit is a knob without a
-   number. Read the line, decide if it is real.
-3. **Walk the seven caps** (SKILL.md Step 6). Each is a yes/no with a line number.
+   number; every PROD-ORACLE hit is a candidate Cap C9. Read the line, decide if it is real.
+3. **Walk the ten caps** (SKILL.md Step 6). Each is a yes/no with a line number. Three of
+   them need no ledger at all: is the plan more than one type on one release train (C8)?
+   Does Phase 0 touch the real external dependency, and can it be re-run on demand (C3)?
+   Is there any way to exercise the riskiest capability other than production (C9)?
 4. **Walk the high-stakes rows of the ledger catalog only** (`references/DECISION-LEDGER.md`,
    rows marked **H**): language, deployment unit, source of truth, storage engine, schema
    evolution, ID scheme, wire format, backup/restore, concurrency, failure policy, auth,
@@ -27,7 +30,7 @@ lines. Output is a verdict and the forks, not a memo. No structural sweep.
 Fast review: <plan> @ <sha/date>
 Verdict: NOT READY (Cap C4) · READY AFTER DECISIONS (3) · READY
 
-Caps: C1 pass · C2 n/a · C3 pass · C4 TRIPPED · C5 unverified · C6 pass · C7 pass
+Caps: C1 pass · C2 n/a · C3 pass · C4 TRIPPED · C5 unverified · C6 pass · C7 pass · C8 n/a · C9 pass · C10 pass
 High-stakes forks:
   language LOCKED · deploy unit LOCKED · source of truth LOCKED · storage ASSERTED ·
   schema evolution UNNOTICED · IDs ASSERTED · wire format LOCKED · backup DEFERRED (:87) ·

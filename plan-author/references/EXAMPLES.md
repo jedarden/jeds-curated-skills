@@ -87,6 +87,37 @@ callers can detect it. A vanished file is never an error because concurrent edit
 
 ---
 
+## First Slice (Phase 0)
+
+**WEAK**
+```markdown
+| 0 — Consolidated baseline | This plan, source provenance, requirements, conflict dispositions |
+| 1 — Inventory, contracts, safety seam | Typed read/command/event schemas; identities; fixtures |
+| 2 — Shared broker reads | Extract client/session/cache under one owner |
+| 3 — Execution transport | ArdenOne uses shared broker commands |
+```
+Nothing touches the real broker until Phase 3. Phases 0–2 can be "complete" with every test
+green and the system never exercised. The first real test is the production cutover.
+
+**GOOD**
+```markdown
+### Phase 0: Walking Skeleton
+**Goal:** one quote request traverses the new `ibkr-service`, the data API and the Trading MCP
+and returns a real IBKR quote.
+**Real dependency exercised:** the IBKR gateway, through a recorded-session replay harness
+(`scripts/replay-gateway.sh fixtures/session-2026-09-04/`) that can be re-run on demand; one
+live read per day against the sandbox account proves the recording is current.
+**Retires or shadows:** shadows the legacy `get_market_snapshot` tool — both answers logged,
+diff reported, legacy still authoritative.
+**Does NOT include:** order placement, session handoff, any second capability.
+**Exit criteria:** `pnpm run phase0` exits 0 with a quote whose fields match the legacy
+snapshot for SPY within the recorded tolerance.
+```
+The riskiest dependency is exercised in week one, repeatably, without a production event, and
+the slice retires something.
+
+---
+
 ## Open Question (the right way to defer)
 
 **WEAK** (a buried TBD)

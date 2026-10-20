@@ -1,13 +1,15 @@
 ---
 name: plan-idea-gen
-version: 1.0.0
+version: 1.1.0
 description: >-
   Generate a large pool of ideas (default 100) for a project anchored to its plan.md, then
   ruthlessly filter to the top K (default 10) via lens-forced generation, clustering,
   pairwise ranking, and an adversarial kill pass — all inline in a single context (no
-  subagents). Winners become dossiers, ledger entries, and optionally bf beads. Use when
-  the user wants to brainstorm, ideate, expand a roadmap, or asks for "best ideas" /
-  "top N ideas" for a project or plan.
+  subagents). Winners become dossiers, ledger entries, and optionally beads in the repo's
+  own bead backend. Until the plan's first slice has shipped, adopted ideas land only in a
+  held "Later" section, never in the backlog or the bead graph. Use when the user wants to
+  brainstorm, ideate, expand a roadmap, or asks for "best ideas" / "top N ideas" for a
+  project or plan.
 argument-hint: "[plan.md path or repo] [--pool N] [--keep K] [--constraint \"...\"] [--lens \"...\"]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, TaskGet
 ---
@@ -62,13 +64,27 @@ Read the resolved plan.md in full. Derive from it:
 - `GOAL` = the plan's stated purpose, condensed to 2–3 sentences
 - `CONSTRAINTS` = hard constraints from the plan, the repo's CLAUDE.md/README, plus any
   `--constraint` args. These become kill criteria later.
+- `SLICE_STATUS` = whether the plan's first slice (Phase 0 / walking skeleton) has
+  **shipped**: a dated status row or completion note in the plan, a closed bead for it in
+  the repo's store, or a built artifact. Absent any of those it is `pre-slice`. Say which
+  you found and why, in one line, before generating.
+
+**Pre-slice runs adopt into "Later" only.** Ideation against an unshipped plan is how a
+backlog of 45 items becomes 58 on the day the plan is written — the tradegraph-platform
+postmortem (2026-10-20) adopted 13 proposals across three runs on its consolidation day,
+and two of them grew into acceptance umbrellas that never closed. When `SLICE_STATUS` is
+`pre-slice`, the pipeline still runs in full and the ledger is still written, but adopted
+ideas go only to a `## Later (held until the first slice ships)` section of the plan,
+each with the gate that admits it; they do not enter the backlog, the phase table or the
+bead graph. Say this before Step 1 so the user is not surprised at Step 8.
 
 ## Step 1: Ground (inline scout)
 
 Scout the repo directly with Read/Glob/Grep — no agent. Produce a grounding digest:
 what the app already does, architecture, existing features, open plan phases, open
-beads (`bf ready` / `bf list` in REPO if it has `.beads/`), and anything in
-`docs/notes/`. Also read the ledger `REPO/docs/notes/ideas-ledger.md` if it exists and
+beads (using the backend the repo actually declares — `.beads/config.json` +
+`.beads/checkpoint/` → bead-rs `bead list --json`; `.beads/config.yaml` → legacy `bf list`;
+never guess, the wrong CLI corrupts the other's store), and anything in `docs/notes/`. Also read the ledger `REPO/docs/notes/ideas-ledger.md` if it exists and
 extract previously considered ideas as `PRIOR` (title + one-line + verdict).
 
 The digest keeps generation from proposing what already exists and judging from
@@ -141,12 +157,16 @@ marked. This is what future runs dedupe against. Commit it (with the plan.md edi
 if any) using the standard git identity; push only per the repo's usual rules.
 
 **Selection** — AskUserQuestion (multiSelect) over the finalists: which to adopt. For
-adopted ideas:
-- create beads in REPO's workspace via `bf` (never `br`): `bf create` or `bf batch`
-  with title + dossier body; if the repo has a genesis bead, add them as blockers of it
-  (`dep_add_blocker`). Then `bf sync --flush-only` — beads are db-only until flushed.
-- offer to append adopted ideas to the plan.md's roadmap/open-questions section so the
-  plan stays the single complete picture.
+adopted ideas, by `SLICE_STATUS`:
+- **`pre-slice`:** append each to the plan's `## Later (held until the first slice ships)`
+  section with the gate that admits it. No beads, no backlog row, no phase-table entry.
+- **shipped:** offer to append adopted ideas to the plan.md's roadmap/open-questions
+  section so the plan stays the single complete picture, and create beads in REPO's
+  workspace with the backend detected in Step 1 — bead-rs: `bead create --title … --label
+  proposal-pending --label human` (held until an explicit batch admission; if the repo has
+  a genesis bead, `bead dep add <genesis> <new>`), then `bead sync flush-only` when the
+  workspace publishes manually; legacy bf stores keep their own `bf create` / `bf sync
+  --flush-only` recipe. Never run `br`.
 
 ## Key principles
 
@@ -160,5 +180,7 @@ adopted ideas:
   assassin isn't worth the complexity burden.
 - **Nothing is wasted** — losers and kill reasons live in the ledger; re-runs mine and
   dedupe against them.
+- **Ideas never enlarge an unshipped plan** — before the first slice ships, winners wait
+  in a held section; the backlog grows only from what reality has already tested.
 - **Scale to the ask** — a quick "give me ideas" can shrink POOL to ~40 and skip
   crossover; "be exhaustive" scales POOL up (still inline).

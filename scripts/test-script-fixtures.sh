@@ -17,7 +17,7 @@
 #   plan-review        find-forks.sh    pinned summary counts + zero-hit + usage
 #   plan-review        scan-headers.sh  header census + section verdicts + stats + usage
 #   spec-review        score-spec.sh    fixtures 6/13, 13/13, 0/13 + usage
-#   plan-author        score-draft.sh   30/36 + conditional M/S controls + thin + usage
+#   plan-author        score-draft.sh   30/39 + conditional P/M/S controls + thin + usage
 #   readme-review      score-readme.sh  12/14 + type ladder + placeholder + usage
 #   api-design-review  scan-api.sh      4-style inventory + edge cases + usage
 #   test-plan-review   scan-tests.sh    inventory counts + prune + frameworks + usage
@@ -304,7 +304,7 @@ EOF
   run_capture bash "$ff" "$fix"
   assert_rc 0 "fixture scan exits 0"
   assert_has "pinned summary counts" \
-    "DEFER 1 · HEDGE 2 · SHADOW 2 · AMENDED 2 · UNQUANTIFIED 1 · DECIDED-markers 5"
+    "DEFER 1 · HEDGE 2 · SHADOW 2 · AMENDED 2 · UNQUANTIFIED 1 · PROD-ORACLE 0 · DECIDED-markers 5"
 
   # Zero-hit case must not crash and must report all zeros.
   local tiny="$WORK/tiny.md"
@@ -312,7 +312,73 @@ EOF
   run_capture bash "$ff" "$tiny"
   assert_rc 0 "zero-hit scan exits 0"
   assert_has "zero-hit summary is all zeros" \
-    "DEFER 0 · HEDGE 0 · SHADOW 0 · AMENDED 0 · UNQUANTIFIED 0 · DECIDED-markers 0"
+    "DEFER 0 · HEDGE 0 · SHADOW 0 · AMENDED 0 · UNQUANTIFIED 0 · PROD-ORACLE 0 · DECIDED-markers 0"
+
+  # --- Negative fixture (SELF-TEST.md "Negative fixture"): cut from the
+  # tradegraph-platform plan that was decomposed without a review and rolled
+  # back 2026-10-20. Well-formed in every structural sense; the PROD-ORACLE
+  # locator must find its three admissions that production is the only test,
+  # including the one in a heading.
+  local neg="$WORK/plan-review-negative.md"
+  cat > "$neg" <<'EOF'
+# Trading Platform — consolidated architecture and implementation plan
+
+**Type:** Port
+**Status:** v1.20 · **Last updated:** 2026-09-06
+
+## 1. Outcome and scope
+
+### 1.2 Three separately gated workstreams
+
+| Workstream | Outcome |
+|---|---|
+| A — Consolidation and shared infrastructure | Port the research MCP, the journal and the broker service into one platform |
+| B — Expanded intelligence | Event-first discovery, lineage, bridges, ranking |
+| C — Operating readiness | A rehearsed daily workflow and a separately commissioned execution path |
+
+All three ship on one platform version from one repository; every component releases together.
+
+## 13. Operating workflows
+
+### 13.5 Tuesday, September 8 target runbook
+
+This is a requested operating target, not a claim of readiness.
+
+## 14. Migration phases
+
+| Phase | Work | Completion evidence |
+|---|---|---|
+| 0 — Consolidated baseline | This plan, source provenance, requirements, conflict dispositions | Validated documents published |
+| 1 — Inventory, contracts, safety seam | Source baselines; typed read/command/event schemas; identities; old-engine fixtures | Import manifest; denial tests |
+| 2 — Shared broker reads and capture | After 1: extract client/session/cache under one owner | Same-identity read parity |
+| 3 — Execution transport extraction | After 1–2: the execution engine uses shared broker commands | Two-hop response-loss, idempotency, recovery tests |
+| 4 — Unified journal and facade | After 1 | Real-database invariants |
+| 5 — Bounded discovery | After 2/4 | T1/T2 rehearsal |
+| 6 — Advanced intelligence | After 5 | Forward cohorts |
+| 7 — Retirement | After each capability's parity gates | Retirement record |
+
+## 15. Verification and release gates
+
+Sixteen gates, G01–G16, each requiring evidence against the release candidate. Live broker
+mutations require separately scoped commissioning; see §19.6 for why this commissioning runs
+on the single production account rather than a paper account.
+
+## 19. Decision dispositions
+
+### 19.6 Paper commissioning not available; live tests reproduce the legacy broker's capabilities instead
+
+The broker offers no paper account for this entitlement set. Execution behaviour is proven by
+ported legacy unit tests against fixtures, and then by live drills on the production account
+during the cutover window.
+EOF
+  run_capture bash "$ff" "$neg"
+  assert_rc 0 "negative fixture scan exits 0"
+  assert_has "negative fixture summary (three production-only admissions)" \
+    "DEFER 0 · HEDGE 1 · SHADOW 0 · AMENDED 0 · UNQUANTIFIED 1 · PROD-ORACLE 3 · DECIDED-markers 0"
+  assert_has "negative fixture: heading admission is a hit" \
+    ":45  ### 19.6 Paper commissioning not available; live tests reproduce"
+  assert_has "negative fixture: C9 hint" \
+    "PROD-ORACLE line(s) — the plan admits the live system is the only test"
 
   run_capture bash "$ff"
   assert_rc 2 "usage error (no file) exits 2"
@@ -561,12 +627,15 @@ EOF
 
   run_capture bash "$sc" "$w/draft.md"
   assert_rc 0 "draft fixture exits 0"
-  assert_has "draft score 30 / 36 (83%)" "Score: 30 / 36 (83%)"
+  assert_has "draft score 30 / 39 (76%)" "Score: 30 / 39 (76%)"
   assert_has "draft status BACKFILL NEEDED" \
     "Status: BACKFILL NEEDED (write the missing sections, then re-score)"
   assert_block "backfill list exact (order + count)" "  MISSING: " '  MISSING: 1.4 Glossary
   MISSING: 1.5 Normative Language
   MISSING: 5.3 Invariants
+  MISSING: 6.4 First slice hits the riskiest dependency
+  MISSING: 7.3 Oracle access
+  MISSING: 7.4 Inner-loop budget
   MISSING: 9.2 Measurement method
   MISSING: 12.2 Plan B
   MISSING: 13.2 Revision history'
@@ -581,8 +650,23 @@ cutover gate and rollback trigger; post-cutover validation and old-path retireme
 EOF
   run_capture bash "$sc" "$w/migration.md"
   assert_rc 0 "migration conditional fixture exits 0"
-  assert_has "migration score includes five controls" "Score: 35 / 41 (85%)"
+  # 37, not 36: the M.3 line's "diff oracle" also satisfies base check 7.3.
+  assert_has "migration score includes six controls" "Score: 37 / 45 (82%)"
   assert_not_has "migration has no missing M controls" "MISSING: M."
+
+  cat "$w/draft.md" > "$w/port.md"
+  cat >> "$w/port.md" <<'EOF'
+
+**Type:** Port
+## Type-Specific Requirements
+Source metrics: LOC by subsystem measured; capability slices each retire one legacy path with a size cap;
+conformance harness against the original; porting order by dependency layer; not-ported list recorded.
+EOF
+  run_capture bash "$sc" "$w/port.md"
+  assert_rc 0 "port conditional fixture exits 0"
+  # 36, not 35: the Port line's "measured" also satisfies base check 9.2.
+  assert_has "port score includes five controls" "Score: 36 / 44 (81%)"
+  assert_not_has "port has no missing P controls" "MISSING: P."
 
   cat "$w/draft.md" > "$w/spike.md"
   cat >> "$w/spike.md" <<'EOF'
@@ -594,13 +678,13 @@ gate; decision record in the informed plan; default if inconclusive.
 EOF
   run_capture bash "$sc" "$w/spike.md"
   assert_rc 0 "spike conditional fixture exits 0"
-  assert_has "spike score includes six controls" "Score: 36 / 42 (85%)"
+  assert_has "spike score includes six controls" "Score: 36 / 45 (80%)"
   assert_not_has "spike has no missing S controls" "MISSING: S."
 
   printf '# Plan\n\nWe will build a thing.\n' > "$w/thin.md"
   run_capture bash "$sc" "$w/thin.md"
   assert_rc 0 "thin draft exits 0"
-  assert_has "thin draft score 0 / 36 (0%)" "Score: 0 / 36 (0%)"
+  assert_has "thin draft score 0 / 39 (0%)" "Score: 0 / 39 (0%)"
   assert_has "thin draft status INCOMPLETE" \
     "Status: INCOMPLETE (drafter output is thin — re-draft before backfilling)"
 

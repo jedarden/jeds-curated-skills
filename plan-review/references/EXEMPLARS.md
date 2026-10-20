@@ -182,3 +182,7 @@ demonstrates a sub-minute freshness need.
 | "decided 2026-07-20" inside a 900-word Open Questions paragraph; the Architecture section still shows the old value | Two sources of truth in one document | SHADOW |
 | `Phase 2: Caching layer` as a checkbox with no completion criteria | "Done" is whatever the worker who closed the bead thought | PARTIAL (5.2) |
 | A plan scored "88% present, 0 missing" whose first phase was blocked for five days | Percentages measured headers, not decisions | — (why this skill changed) |
+| `Phase 0 — Consolidated baseline: this plan, source provenance, requirements` followed by `Phase 1 — Inventory, contracts, safety seam`; the live broker first touched in Phase 3 | Ten weeks passed before the riskiest dependency was exercised; every gate before that was fixture parity | Cap C3 |
+| `§1.2 Three separately gated workstreams` (consolidation, expanded intelligence, operating readiness) in one repo, one version, one bead graph of 298 | Nothing could ship until all three did; "separately gated" was prose, not structure | Cap C8 |
+| `§19.6 Paper commissioning not available; live tests reproduce ibkr-mcp's capabilities instead` | The only oracle was production: 3,950 ported tests green, nine live defects in the first hours, rollback before the open | Cap C9 |
+| A 3,778-line plan that grew by 1,151 lines after its 298 beads were cut, with 74 plan commits during the build | Workers needed 164 memory notes to navigate it; the plan became the decision log and the evidence ledger | Cap C10 |

@@ -93,6 +93,15 @@ the fixture and verify against the transcript + repo state:
    every case.
 8. **Selection gate** — ideas become beads/plan edits only after the
    AskUserQuestion multiSelect; nothing is auto-adopted.
+9. **Pre-slice adoption lands in Later only** — the Widgetline fixture has no
+   shipped first slice (no status row, no beads, no artifact), so the run says
+   `SLICE_STATUS: pre-slice` before generating, and any adopted finalist is
+   appended under `## Later (held until the first slice ships)` with an
+   admitting gate. Zero beads are created and no backlog or phase row is
+   added. Creating a bead or a backlog row from this fixture fails the pin.
+10. **Bead backend detected, never `bf` by default** — when beads are
+    created at all (a shipped-slice plan), the CLI is the one the repo
+    declares; a `bf` command against a `.beads/config.json` store fails the pin.
 
 ## Ambiguity STOP test (hard pin)
 

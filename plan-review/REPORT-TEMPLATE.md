@@ -13,8 +13,8 @@ Save to `docs/notes/plan-review-<YYYY-MM-DD>.md` (plan at `docs/plan/plan.md`) o
 # Plan Review: <plan title>
 
 **Verdict:** NOT READY · READY AFTER DECISIONS (n) · READY
-**Plan:** `<path>` @ `<git sha · date>` · **Type:** <Greenfield / Port / Improvement / Integration / Migration / Spike> · **Code exists:** yes/no
-**Reviewed:** <YYYY-MM-DD> by plan-review 2.0
+**Plan:** `<path>` @ `<git sha · date>` · **Type:** <Greenfield / Port / Improvement / Integration / Migration / Spike — or "compound: <first-shipping type>, holding <others>"> · **Code exists:** yes/no · **Lines:** <n>
+**Reviewed:** <YYYY-MM-DD> by plan-review 2.1
 
 <One plain paragraph. Why this verdict. The single biggest risk in one sentence. If READY
 AFTER DECISIONS: "Answer the n questions below and this plan can be decomposed and built
@@ -67,11 +67,14 @@ human gate resolves it>
 |---|---|---|
 | C1 observable acceptance for the central outcome | pass / **TRIPPED** | `plan.md:…` |
 | C2 destructive steps have backup + rollback + trigger | pass / TRIPPED / n/a | |
-| C3 bounded first slice exists | | |
+| C3 first slice exercises the riskiest real dependency, re-runnable without a production event | | <phase + line; what it retires for a port> |
 | C4 no high-stakes open fork on Phase 0–1's path | | → DN-n |
 | C5 load-bearing claims hold | | → R-n |
 | C6 house rules respected | | <rule + line> |
 | C7 secrets / untrusted input policy stated | | |
+| C8 not compound, or first-shipping type named and the rest held | pass / TRIPPED / n/a | <workstreams + line> |
+| C9 an oracle other than production exists for the highest-stakes capability | | <replay / sandbox / shadow + line> |
+| C10 bead-holder can navigate it (≤ ~1,500 lines or a per-phase reading guide) | | <line count> |
 
 ## 5. Structural gaps that apply
 

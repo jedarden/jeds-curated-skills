@@ -41,6 +41,13 @@ find . -name '*.rs' -o -name '*.ts' -o -name '*.py' -o -name '*.go' | xargs wc -
 
 Record: the component/module names, the entry points, and (for Port) total and per-area LOC.
 
+For a Port, also record **slice candidates**: each externally visible capability of the source
+(a tool, an endpoint, a worker), the consumer that depends on it, and how it could be exercised
+without production (a sandbox account, a recorded session, a shadow read alongside the running
+system). The drafter turns these into the phase table, one retired capability per phase. If no
+capability can be exercised without production, say so — that is the plan's first Open
+Question, not something to discover at cutover.
+
 ## Step 3: Extract the Data Model
 
 Find the durable shapes so §7 of the plan reflects reality, not invention:
@@ -77,6 +84,8 @@ Hand the drafter a concise factual packet — no speculation:
 - Current interface: <flags/endpoints>
 - Gaps / pain (Improvement): <numbered, from TODOs + brief>
 - Source metrics (Port): <per-area LOC table>
+- Slice candidates (Port): <capability → consumer → how exercised without production>
+- Oracle available (Port / Improvement): <sandbox / replay / shadow — command, or "none found">
 ```
 
 ## Step 6: Hand Off

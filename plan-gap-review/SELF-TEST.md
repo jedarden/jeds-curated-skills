@@ -168,6 +168,11 @@ nitpick here is the regression.
   when nothing changed since it ran.
 - **No cosmetic nitpicks**: findings are gaps that would cause implementation
   confusion, a security issue, or a user-facing bug — not wording preference.
+- **Round budget**: each round reports findings closed, findings its own edits
+  introduced, and net line growth; a round that opens more than it closes ends
+  the invocation with a report, and two rounds is the ceiling without new
+  outside input. On Fixture A one round closes all seven with zero introduced,
+  so a second round never starts.
 - **Exact-path staging**: commits name the precise edited paths, never a
   blanket `git add -A` / `git commit -a`, so a shared checkout's other
   in-flight edits are never swept in.

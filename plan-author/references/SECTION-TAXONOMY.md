@@ -28,8 +28,10 @@ catalog — trimmed to the headers a fresh plan should actually contain.
 | 8.3 | `### 8.3 Invariants (Must Always Hold)` | Conditions that signal a bug if violated. |
 | 8.4 | `### 8.4 Rollback` | How a bad change is undone; what state is captured. |
 | 9 | `## 9. Phasing` | Ordered phases with same-commit completion criteria. |
-| 9.0 | `### Phase 0: Walking Skeleton` | One command through every layer, throwaway quality. |
+| 9.0 | `### Phase 0: Walking Skeleton` | One command through every layer, throwaway quality, through the riskiest real dependency, re-runnable on demand. |
 | 10 | `## 10. Testing Strategy & Quality Gates` | Test levels mapped to risk + stop-ship gates. |
+| 10.3 | `### 10.3 Test Oracle Access` | The oracle that stands in for production, as a command. |
+| 10.4 | `### 10.4 Inner-Loop Budget` | Per-change check bounded in minutes; full gate per release. |
 | 11 | `## 11. Security & Threat Model` | Attacker, surface, per-threat mitigation + test; secrets. |
 | 12 | `## 12. Performance Budgets` | Numeric targets on named conditions + measurement method. |
 | 13 | `## 13. Operations (Deploy, Migration, Monitoring)` | Ship, configure, migrate, observe. |
@@ -42,9 +44,11 @@ catalog — trimmed to the headers a fresh plan should actually contain.
 
 Insert these where the table note points; keep the base numbering otherwise.
 
-- **Port** — under §6: `## Parity Matrix (As Of <date>)` (location | status | gaps),
-  `## Source Metrics` (analyze source LOC before estimating), `## Porting Order`,
-  and under §10: `### Conformance Harness`, `### File Format Round-Trip`.
+- **Port** — retain the `## Type-Specific Requirements` block from the template and fill
+  `### Port`: source metrics, capability slices (each phase retires or shadows one legacy path
+  with a size cap), conformance oracle, porting order, and the not-ported list. Also under §6:
+  `## Parity Matrix (As Of <date>)` (location | status | gaps); under §10: `### File Format
+  Round-Trip` where formats are involved.
 - **Improvement** — under §2: `## What We're NOT Changing`; under §5: `## Gap Inventory`;
   under §10: `### Behavioral Regression Tests`; under §13: `### Rollback Criteria Before Rollout`.
 - **Integration** — under §6: `## Dependency Integration Contracts (per-dep)`; under §8:

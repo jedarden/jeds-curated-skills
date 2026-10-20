@@ -1,16 +1,18 @@
 ---
 name: plan-review
-version: 2.0.0
+version: 2.1.0
 description: >-
   Pre-flight review of a software plan that hunts for the decisions an implementer will be
   forced to make that the plan has not made — and proposes each one — so the plan itself is the
   decision record and no ADRs are needed mid-build. Runs inline in a single context (no
   subagents). Produces a verdict (NOT READY / READY AFTER DECISIONS / READY), a decision ledger
   with a proposed resolution per open fork, an implementer dry-run, a reality check against the
-  real repo and cluster, hard safety caps, and a compact structural sweep. `--lock` writes
+  real repo and cluster, hard safety caps (including: a first slice that touches the riskiest
+  real dependency, no compound rewrite on one release train, no production-only test oracle,
+  a plan a bead-holder can navigate), and a compact structural sweep. `--lock` writes
   accepted decisions into the plan where an implementer will actually read them. Use before
-  implementation begins, before decomposing a plan into beads, or whenever a project keeps
-  spawning ADRs after the plan was "done".
+  implementation begins, before decomposing a plan into beads (plan-to-bead refuses without
+  this review's memo), or whenever a project keeps spawning ADRs after the plan was "done".
 argument-hint: "[path/to/plan.md] [--fast] [--lock DN-1,DN-3 | --lock all]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
@@ -59,12 +61,28 @@ other. Plans up to ~6k lines fit; for larger ones read in section-sized chunks, 
 
 A Spike is judged almost entirely by `S.*` in the sweep; most structural items are N/A for it.
 
+**Compound plans (Cap C8).** A plan is *compound* when it is more than one type at once:
+a Port of a running system plus a Migration of its data plus an Integration with a second
+system plus Greenfield features, all on one release train. Such a plan can be fully decided,
+fully gated and still undeliverable, because nothing ships until everything ships and every
+rehearsal is a production event. Classify it by the **one type that ships first** — the
+slice that retires or shadows one legacy capability — and require the plan to name that
+type, to list the other workstreams as *held* behind that slice's acceptance, and to give
+each held workstream its own entry gate. A compound plan that names no first-shipping
+type, or whose "separately gated workstreams" share one bead graph and one version, trips
+C8. The remedy is a split: one plan per shippable type, or one plan whose later
+workstreams are explicitly held and not decomposed (plan-to-bead honours that hold).
+
 ## Step 2 — Mechanical pre-pass (locators, never verdicts)
 
 ```bash
-~/.claude/skills/plan-review/scripts/find-forks.sh <plan>     # DEFER / HEDGE / SHADOW / UNQUANTIFIED hits with line numbers
+~/.claude/skills/plan-review/scripts/find-forks.sh <plan>     # DEFER / HEDGE / SHADOW / UNQUANTIFIED / PROD-ORACLE hits with line numbers
 ~/.claude/skills/plan-review/scripts/scan-headers.sh <plan>   # section map with line numbers
 ```
+
+A `PROD-ORACLE` hit is a sentence admitting that the only way to exercise something is the
+live system ("paper account not available", "live tests reproduce", "can only be verified
+in production"). Each one is a candidate Cap C9; read it and decide.
 
 These tell you *where to look*. A clean scan proves nothing — a plan can say "SQLite" with
 total confidence and still never decide what happens when the disk fills. Lenses A–E decide.
@@ -132,6 +150,16 @@ must name. A plan that passes the fleet test needs no ADRs.
   case resolution; two sections giving two values for one knob; a struck-through question
   whose resolution never reached the body. Quote both sides with line numbers.
 - **Freshness.** Date stamp, revision history, "as of" markers older than the code.
+- **Size and navigability.** `wc -l` the plan. Past about 1,500 lines a worker holding one
+  bead cannot find what binds that bead, and the plan has started doubling as the decision
+  log and the evidence ledger. Look for a per-phase reading guide ("a Phase 2 implementer
+  reads §4.3, §7.2 and §15 G02"); its absence at that size is Cap C10. The remedy is to
+  move dispositions, evidence and runbooks into `docs/notes/` and leave the plan with what
+  a bead-holder must read.
+- **Target date vs. critical path.** If the plan names an operating or launch date, walk
+  the phase table and ask which phase must be complete by then. A date that precedes the
+  first slice, or that the phase dependencies cannot reach, is a finding: either the date
+  is decorative (say so in the plan) or the slice order is wrong.
 
 ## Step 6 — Lens D: safety caps (any one tripped ⇒ NOT READY)
 
@@ -139,13 +167,24 @@ must name. A plan that passes the fleet test needs no ADRs.
 |---|---|
 | C1 | The central outcome has no observable pass/fail criterion — success is indistinguishable from failure. |
 | C2 | A destructive or irreversible step (migration, deletion, cutover, key rotation) has no backup, no rollback mechanism, or no rollback trigger. |
-| C3 | There is no bounded first slice — no phase that can be demonstrated end-to-end before the rest is built. |
+| C3 | There is no bounded first slice that exercises the **highest-stakes external dependency** (the real broker, the real cluster, the real upstream API) end to end and can be re-run on demand without a production event. A documents-only or contracts-only Phase 0 does not count. For a Port or Migration the first slice must retire or shadow **one** legacy capability. |
 | C4 | A high-stakes DEFERRED / UNNOTICED fork sits on the critical path of the first two phases. |
 | C5 | A load-bearing claim about existing reality is false. |
 | C6 | The plan violates a hard rule in the governing `CLAUDE.md` / `AGENTS.md` — it will be rejected at PR or sync time. |
 | C7 | The system touches secrets or untrusted input and states no handling policy at all. |
+| C8 | The plan is compound (more than one type on one release train — see Step 1) and does not name the single type that ships first with the other workstreams held behind its acceptance. |
+| C9 | The only oracle for the highest-stakes capability is the live production dependency: no record-and-replay, rehearsal environment, sandbox account or shadow comparison exists that can be exercised repeatedly without a production event. "The tests pass" against ported unit tests is not an oracle for this cap. |
+| C10 | The plan exceeds about 1,500 lines and has no per-phase reading guide naming the sections a bead-holder for that phase must read. |
 
 There are no percentages. Percentages reward length; caps reward safety.
+
+**Why C3, C8, C9 and C10 exist.** A 3,778-line plan with 16 gates, 45 backlog items and an
+11-point definition of done was decomposed into 298 beads without this review, grew by
+1,151 lines while the fleet built against it, and reached its first live-broker slice ten
+weeks in, on the only session the business had. 3,950 ported tests were green; nine
+execution defects surfaced in the first live hours and the owner rolled back before the
+open. Every one of those caps would have tripped on day one. The negative fixture in
+`SELF-TEST.md` is cut from that plan.
 
 ## Step 7 — Lens E: structural sweep (the safety net, demoted)
 
@@ -191,5 +230,6 @@ gate. Never a 60-line ADR appended at the end; never a `[FILL IN]`.
 
 `references/EXEMPLARS.md` shows what a locked decision, a well-parked open question, a spike,
 and an acceptance scenario look like — and the anti-patterns this skill exists to catch (the
-appended ADR, the `[FILL IN]`, the "likely axum", the "candidate default" that never locked).
-`SELF-TEST.md` has fixtures with expected results.
+appended ADR, the `[FILL IN]`, the "likely axum", the "candidate default" that never locked,
+the compound rewrite whose only oracle was production). `SELF-TEST.md` has fixtures with
+expected results, including a negative fixture that must trip C3, C8 and C9.

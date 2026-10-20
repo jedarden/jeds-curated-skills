@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Plan skills learn from the tradegraph-platform rollback** (2026-10-20,
+  jedscura-5d5a434d) — a 2,670-line compound plan (port + migration + integration
+  + new features) was cut into 298 beads the day after it was written, with no
+  plan-review; its Phase 0 was documents and Phase 1 contracts, the live broker
+  was first touched ten weeks in, its only execution oracle was production
+  ("paper commissioning not available"), 3,950 ported tests were green, nine
+  live defects surfaced in the first hours and the owner rolled back before the
+  open. The plan grew by 1,151 lines after decomposition; the graph carried 534
+  split-children and 375 system reopens; every bead close ran a 30-minute
+  clean-extraction gate. Changes, each proven against a fixture cut from that plan:
+  - `plan-review` 2.1.0: Cap C3 now requires the first slice to exercise the
+    highest-stakes real dependency on demand (documents/contracts do not count);
+    new caps C8 (compound plan with no first-shipping type), C9 (production is the
+    only oracle) and C10 (plan a bead-holder cannot navigate); Lens C gains size
+    and target-date checks; `find-forks.sh` adds a `PROD-ORACLE` locator and
+    length hint (summary line gains a field — pins updated); ledger rows
+    6.10–6.14, sweep rows 5.7–5.8, 6.8–6.9, P.9–P.10, M.6; four anti-pattern rows.
+  - `plan-author` 1.1.0: compound briefs become one plan per shippable type;
+    checklist/template/scorer gain 6.4 (first slice hits the riskiest
+    dependency), 7.3 (oracle access), 7.4 (inner-loop budget), a Port block
+    P.1–P.5 and M.6; base score is now 39 (fixture pins updated); drafter and
+    runbook record slice candidates and the available oracle.
+  - `plan-to-bead`: hard review-memo gate (no memo or NOT READY → no beads);
+    beads only the first slice and the next phase, later phases as held
+    placeholders; umbrellas labelled and excluded from autonomous dispatch; one
+    split per bead and never on failure alone; audit mode reports plan drift
+    from the decomposition record kept on the genesis bead; per-close gate cost
+    recorded as a throughput finding.
+  - `plan-idea-gen` 1.1.0: pre-first-slice adoption lands only in a held
+    "Later" section; beads use the repo's detected backend (bead-rs by default,
+    `bf` only on a legacy store).
+  - `plan-gap-review` 2.1.0: round budget — a round that opens more gaps than it
+    closes stops the loop; two rounds per invocation; net growth reported.
+
 ### Fixed
 - **skills-validate red on iad-ci for two stacked reasons** (2026-10-11) —
   1. `scripts/check-skill-inventory.sh` listed skill directories with GNU

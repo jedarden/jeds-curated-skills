@@ -38,13 +38,16 @@ bare "TBD" does NOT pass — genuine unknowns belong in §16 Open Questions, num
 - [ ] **5.4 Rollback** — how a bad change is undone and what state is captured.
 
 ## 6. Phasing
-- [ ] **6.1 Walking skeleton** — Phase 0: one command through every layer, throwaway quality.
+- [ ] **6.1 Walking skeleton** — Phase 0: one command through every layer, throwaway quality. Documents, inventories or contracts alone are not a Phase 0.
 - [ ] **6.2 Phases named** — ordered, each delivering a slice.
 - [ ] **6.3 Completion criteria** — per phase, all passing on the same commit, with a "does NOT include".
+- [ ] **6.4 First slice hits the riskiest dependency** — Phase 0 exercises the highest-stakes external dependency (the real broker, cluster, upstream API) and can be re-run on demand without a production event; for a Port or Migration it retires or shadows one legacy capability.
 
 ## 7. Testing
 - [ ] **7.1 Test levels** — unit/integration/scenario mapped to what each protects.
 - [ ] **7.2 Quality gates** — stop-ship conditions that block release.
+- [ ] **7.3 Oracle access** — how the central behaviour is checked before cutover without a production event: a record-and-replay capture, sandbox account, rehearsal environment or shadow comparison, named with the command that runs it. "Only production" is a §16 question, not an answer.
+- [ ] **7.4 Inner-loop budget** — a per-change check bounded in minutes; the full gate runs per release, not per task.
 
 ## 8. Security
 - [ ] **8.1 Threat model** — attacker, surface, per-threat mitigation + test (or explicit "trivial because…").
@@ -73,7 +76,14 @@ bare "TBD" does NOT pass — genuine unknowns belong in §16 Open Questions, num
 
 ## Type-Specific Plan Controls (conditional)
 
-Complete only the block matching the plan's `**Type:**`; the other type is not scored.
+Complete only the block matching the plan's `**Type:**`; the other types are not scored.
+
+### Port
+- [ ] **P.1 Source metrics** — LOC by subsystem of the source, measured, before any target estimate.
+- [ ] **P.2 Capability slices** — each phase retires or shadows one legacy path, with a size cap; nothing waits for "everything ported".
+- [ ] **P.3 Conformance oracle** — a conformance harness or golden comparison against the original, runnable from day one.
+- [ ] **P.4 Porting order** — by dependency layer, stated.
+- [ ] **P.5 Not-ported list** — what is explicitly not ported, by subsystem, with the reason.
 
 ### Migration / Cutover
 - [ ] **M.1 Backup and restore rehearsal** — a named backup is integrity-checked and its restore is rehearsed before any destructive step.
@@ -81,6 +91,7 @@ Complete only the block matching the plan's `**Type:**`; the other type is not s
 - [ ] **M.3 Shadow / canary and diff oracle** — a bounded comparison period and authoritative mismatch threshold are named.
 - [ ] **M.4 Cutover gate and rollback trigger** — go/no-go signals, owner, and measurable rollback trigger are explicit.
 - [ ] **M.5 Post-cutover validation and old-path retirement** — validation, observation, and retirement evidence are planned.
+- [ ] **M.6 Rehearsal oracle** — the cutover path is rehearsed against a replay, sandbox or shadow, not first against the production dependency.
 
 ### Spike
 - [ ] **S.1 Measurable question** — one sentence states the question a measurement can answer.
@@ -90,5 +101,5 @@ Complete only the block matching the plan's `**Type:**`; the other type is not s
 - [ ] **S.5 Decision record** — results are written into the plan the spike informs, not only a research log.
 - [ ] **S.6 Default if inconclusive** — a concrete default choice is stated for an inconclusive result.
 
-The `score-draft.sh` self-score adds M.1–M.5 or S.1–S.6 when the type metadata selects that
-block. A generic 36/36 score is therefore not sufficient for either conditional plan type.
+The `score-draft.sh` self-score adds P.1–P.5, M.1–M.6 or S.1–S.6 when the type metadata selects
+that block. A generic 39/39 score is therefore not sufficient for any conditional plan type.

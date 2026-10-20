@@ -81,6 +81,8 @@ not the header.
 | 5.4 | Entry criteria / gates | Lint + test (+ bench) before the next phase starts |
 | 5.5 | Size estimate | Rough LOC or effort per phase; ambition vs. capacity |
 | 5.6 | Parallel vs. sequential tracks | Sync points named; ship order vs. phase number distinguished |
+| 5.7 | First slice touches the riskiest dependency ⇢ 6.1, 6.11 | Phase 0 exercises the real external dependency on demand; not documents, not contracts alone |
+| 5.8 | Target date vs. critical path | Any named date is reachable by the phase order, or labelled decorative |
 
 ## 06 Testing
 
@@ -93,6 +95,8 @@ not the header.
 | 6.5 | Stop-ship quality gates | "We do not ship if…" |
 | 6.6 | All gates on the same commit | No "tests pass but bench broken" merges |
 | 6.7 | Evidence bundle ⇢ 6.7 | What substantiates a performance/correctness claim, decided now |
+| 6.8 | Oracle access ⇢ 6.10 | How the highest-stakes behaviour is exercised without a production event, as a command |
+| 6.9 | Inner-loop budget ⇢ 6.14 | Per-change check bounded in minutes; full gates per release |
 
 ## 07 Security
 
@@ -163,6 +167,8 @@ not the header.
 | P.6 | Porting order by dependency layer |
 | P.7 | Feature-flag strategy for gated features |
 | P.8 | Toolchain pinned ⇢ 1.1 |
+| P.9 | Capability slices ⇢ 6.11: each slice retires or shadows one legacy path, with a size cap; nothing waits for "everything ported" |
+| P.10 | Source metrics have a consequence: what is explicitly *not* ported, by subsystem |
 
 ### I — Improvement
 | ID | Item |
@@ -192,6 +198,7 @@ not the header.
 | M.3 | Shadow / canary period with a diff oracle |
 | M.4 | Cut-over gate and rollback trigger, named ⇢ 6.3 |
 | M.5 | Post-cutover validation and the retirement of the old path |
+| M.6 | Rehearsal oracle ⇢ 6.10: the cutover path can be exercised without the production dependency (replay, sandbox, shadow) |
 
 ### S — Spike (a plan whose deliverable is a decision)
 | ID | Item |

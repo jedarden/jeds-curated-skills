@@ -15,6 +15,9 @@
 #                its home section as a headline decision; fold the ones that are buried in prose
 #   UNQUANTIFIED a knob named with no number on the line: timeout, interval, TTL, retention,
 #                limit, budget, replicas, threshold, backoff, cap
+#   PROD-ORACLE  an admission that the only way to exercise something is the live system:
+#                "paper account not available", "live tests reproduce", "only verified in
+#                production", "single production account" — each is a candidate Cap C9
 #
 # DECIDED-markers (decision:, rejected, revisit if, enforced by, MUST, ADR-n) are counted as a
 # rough sense of how much the plan commits to — a hint, not a grade.
@@ -49,6 +52,7 @@ HEDGE_RE='\blikely\b|\bprobably\b|\bmaybe\b|\bpossibly\b|\bperhaps\b|\bmight\b|\
 DECIDED_RE='\bdecided\b|\bdecision:|\bwe (chose|choose|use|will use|adopt|pick)\b|\bchosen\b|\brejected\b|\bADR-?[0-9]+|\blocked\b|\bratif(y|ied)\b|\bsupersede[sd]?\b|\bnon-negotiable\b|\bMUST( NOT)?\b|\brevisit if\b|\benforced by\b|\bbecause:'
 KNOB_RE='\b(timeout|interval|ttl|retention|limit|budget|replicas|threshold|max(imum)?|min(imum)?|cadence|quota|window|backoff|cap)\b'
 AMEND_RE='\b(decided|resolved|amended|corrected|narrowed|ratified|revised|superseded) [0-9]{4}-[0-9]{2}-[0-9]{2}'
+ORACLE_RE='\bpaper (account|trading|commissioning)[^.]*\b(not|un)available\b|\bno (paper|sandbox|staging|rehearsal|test) (account|environment|cluster|gateway|broker)\b|\blive tests? (reproduce|replace|stand in for)\b|\bonly (be )?(tested|verified|exercised|rehearsed|validated|proven|observed) (in|against|on|with) (production|live|the live|real)\b|\bcannot be (tested|exercised|rehearsed|verified) (without|outside|except)\b|\bsingle (production|live) account\b|\bproduction is the (only|first) (test|oracle|rehearsal)\b|\bcommission(ed|ing) (on|against) the (live|production)\b|\bno (way|means) to (test|exercise|rehearse)[^.]*\b(without|outside|before) (production|live|the live)\b'
 
 # grep helpers: every call tolerates "no match".
 g()  { grep -niE "$1" "$FILE" 2>/dev/null || true; }
@@ -66,6 +70,7 @@ mapfile -t UNQ_HITS     < <(g "$KNOB_RE"    | no_digits | not_heading | not_tabl
 mapfile -t SHADOW_ADR   < <(gE '^#{1,6} .*\b(ADR|Decision Record)' | awk -F: -v from="$SHADOW_FROM" '$1 >= from' || true)
 mapfile -t SHADOW_STRUCK< <(gE '~~[^~]+~~')
 mapfile -t AMEND_HITS   < <(g "$AMEND_RE"   | not_heading | not_table)
+mapfile -t ORACLE_HITS  < <(g "$ORACLE_RE"  | not_quote)
 
 count_distinct_lines() {  # distinct line numbers across the given hit strings
   printf '%s\n' "$@" | grep -oE '^[0-9]+' 2>/dev/null | sort -un | wc -l | tr -d ' ' || true
@@ -76,13 +81,14 @@ n_hedge=${#HEDGE_HITS[@]}
 n_decided=${#DECIDED_HITS[@]}
 n_unq=${#UNQ_HITS[@]}
 n_amend=${#AMEND_HITS[@]}
+n_oracle=${#ORACLE_HITS[@]}
 n_shadow=$(count_distinct_lines "${SHADOW_ADR[@]+"${SHADOW_ADR[@]}"}" "${SHADOW_STRUCK[@]+"${SHADOW_STRUCK[@]}"}")
 [[ -z "$n_shadow" ]] && n_shadow=0
 
 echo "=== find-forks: $FILE ($TOTAL_LINES lines) ==="
 echo ""
-printf 'DEFER %d · HEDGE %d · SHADOW %d · AMENDED %d · UNQUANTIFIED %d · DECIDED-markers %d\n' \
-  "$n_defer" "$n_hedge" "$n_shadow" "$n_amend" "$n_unq" "$n_decided"
+printf 'DEFER %d · HEDGE %d · SHADOW %d · AMENDED %d · UNQUANTIFIED %d · PROD-ORACLE %d · DECIDED-markers %d\n' \
+  "$n_defer" "$n_hedge" "$n_shadow" "$n_amend" "$n_unq" "$n_oracle" "$n_decided"
 echo "(locator only — a clean scan is not a verdict; run the decision ledger)"
 echo ""
 
@@ -112,6 +118,7 @@ if [[ "$QUIET" != "--quiet" ]]; then
   echo ""
   print_list "AMENDED — dated inline amendments (fold the buried ones)" "${AMEND_HITS[@]+"${AMEND_HITS[@]}"}"
   print_list "UNQUANTIFIED — knob named, no number on the line"        "${UNQ_HITS[@]+"${UNQ_HITS[@]}"}"
+  print_list "PROD-ORACLE — the live system is the only oracle (candidate Cap C9)" "${ORACLE_HITS[@]+"${ORACLE_HITS[@]}"}"
 fi
 
 if [[ $n_defer -eq 0 && $n_shadow -eq 0 ]]; then
@@ -121,5 +128,11 @@ else
 fi
 if [[ $n_amend -ge 20 ]]; then
   echo "Hint: $n_amend dated amendments — decisions are being recorded as parentheticals. Consider \`--lock\` to fold them into Form 1 headlines."
+fi
+if [[ $n_oracle -ge 1 ]]; then
+  echo "Hint: $n_oracle PROD-ORACLE line(s) — the plan admits the live system is the only test for something. Cap C9 unless a replay, sandbox or shadow oracle is named."
+fi
+if [[ $TOTAL_LINES -gt 1500 ]]; then
+  echo "Hint: $TOTAL_LINES lines — past ~1,500 a bead-holder cannot navigate it. Cap C10 unless a per-phase reading guide exists."
 fi
 exit 0

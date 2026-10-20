@@ -14,6 +14,9 @@ so `plan-review` and the scoring script can find every section.
 > One-line tagline. What this is, in plain words.
 
 **Type:** Greenfield | Port | Improvement | Integration | Migration / Cutover | Spike
+<!-- guidance: exactly ONE type. A brief that is several types at once (port + migration +
+     integration + new features) is written as one plan per shippable type; this plan is the
+     first-shipping one and the others appear in §2 as held non-goals with entry gates. -->
 **Status:** Draft
 **Last updated:** <YYYY-MM-DD>
 
@@ -133,11 +136,18 @@ they are binding; in lowercase prose they are descriptive.
 
 <!-- guidance: ordered phases, each with completion criteria that all pass on the SAME commit,
      and an explicit "does NOT include". Phase 0 is a walking skeleton: one command end-to-end
-     through every layer, throwaway quality, proving the wiring. -->
+     through every layer, throwaway quality, proving the wiring — and it goes through the
+     RISKIEST REAL DEPENDENCY (the real broker, the real cluster, the real upstream API), via a
+     path that can be re-run on demand without a production event. A Phase 0 made of documents,
+     inventories or contracts alone is not a Phase 0. For a Port or Migration, Phase 0 retires or
+     shadows ONE legacy capability; every later phase names the one it retires and a size cap. -->
 
 ### Phase 0: Walking Skeleton
 **Goal:** prove the wiring — one operation traverses every layer and returns a real result.
 **Delivers:** <minimal end-to-end path.>
+**Real dependency exercised:** <which external system Phase 0 actually talks to, and through what
+  (sandbox account / recorded session replay / shadow read) so it can be re-run on demand.>
+**Retires or shadows (Port / Migration):** <the one legacy capability; N/A for greenfield.>
 **Does NOT include:** error handling, performance, broad tests.
 **Exit criteria:** <one concrete command + expected output.>
 
@@ -160,6 +170,21 @@ they are binding; in lowercase prose they are descriptive.
 
 ### 10.2 Quality Gates (Stop-Ship)
 - <Gate — e.g. all acceptance scenarios pass, lint clean, coverage threshold — that blocks release.>
+
+### 10.3 Test Oracle Access
+<!-- guidance: how the central behaviour is checked BEFORE cutover without a production event.
+     Name the oracle (record-and-replay capture of the real dependency, sandbox account,
+     rehearsal environment, shadow comparison against the running system) and the command that
+     exercises it on demand. If the honest answer is "only production", do not write a section
+     that pretends otherwise: put "how do we build the oracle before Phase 0?" in §16 and treat
+     the plan as not ready. Ported unit tests passing is not an oracle for this section. -->
+**Oracle:** <what stands in for production, and the command that runs it.>
+
+### 10.4 Inner-Loop Budget
+<!-- guidance: the per-change check a worker runs before a commit or a task close, bounded in
+     minutes; the full gate (clean extraction, every suite, real database) runs per release.
+     A full gate per task is how throughput turns into ceremony. -->
+**Per-change check:** <command, bounded to N minutes.>  **Full gate:** <when it runs.>
 
 ## 11. Security & Threat Model
 
@@ -201,13 +226,26 @@ they are binding; in lowercase prose they are descriptive.
 ## Type-Specific Requirements (fill the applicable subsection)
 
 <!-- guidance: Keep the base sections above for every plan. Retain and complete exactly the
-     applicable subsection below; delete the other subsection from the generated plan. These are
-     authoring gates, not optional review notes. Migration / Cutover must make every destructive
-     action recoverable. Spike must make its decision reproducible and bounded. -->
+     applicable subsection below; delete the other subsections from the generated plan. These are
+     authoring gates, not optional review notes. Port must retire legacy paths one slice at a
+     time. Migration / Cutover must make every destructive action recoverable. Spike must make
+     its decision reproducible and bounded. -->
+
+### Port
+
+<!-- guidance: Required when **Type** is Port. Mirror plan-review's P.1–P.10. -->
+
+- **Source metrics (P.1):** <LOC by subsystem of the source, measured by the runbook scan.>
+- **Capability slices (P.2):** <one row per phase: the legacy path it retires or shadows, the
+  consumer that moves, the size cap for the slice. Nothing waits for "everything ported".>
+- **Conformance oracle (P.3):** <the conformance harness or golden comparison against the
+  original, runnable from day one, and the command.>
+- **Porting order (P.4):** <by dependency layer.>
+- **Not-ported list (P.5):** <subsystems explicitly left behind, with the reason each.>
 
 ### Migration / Cutover
 
-<!-- guidance: Required when **Type** is Migration / Cutover. Mirror plan-review's M.1–M.5. -->
+<!-- guidance: Required when **Type** is Migration / Cutover. Mirror plan-review's M.1–M.6. -->
 
 - **Backup and restore rehearsal (M.1):** <name the backup artifact, when it is taken, how its
   integrity is checked, and the exact restore rehearsal completed before any destructive step.>
@@ -219,6 +257,8 @@ they are binding; in lowercase prose they are descriptive.
   abort point, and exact measurable trigger that invokes rollback.>
 - **Post-cutover validation and old-path retirement (M.5):** <list validation checks, observation
   period, ownership transfer, and the evidence required before retiring the old path.>
+- **Rehearsal oracle (M.6):** <how the cutover path is rehearsed against a replay, sandbox or
+  shadow before it ever touches the production dependency, and the command.>
 
 ### Spike
 
