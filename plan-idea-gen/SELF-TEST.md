@@ -67,8 +67,8 @@ echo "$T" > /tmp/pig-selftest-dir
 Run `/plan-idea-gen "$T/proj/docs/plan/plan.md" --pool 40 --keep 10` inside
 the fixture and verify against the transcript + repo state:
 
-1. **No subagents, no Workflow** — the transcript contains zero Agent/Task
-   spawns and zero Workflow invocations. Every stage runs as inline reasoning
+1. **No subagents, no external workflow** — the transcript contains zero
+   delegated agent or workflow invocations. Every stage runs as inline reasoning
    passes.
 2. **Single target** — exactly one plan.md is read and named; the run anchors
    GOAL/CONSTRAINTS to *its* purpose and constraints (the run should quote
@@ -91,8 +91,8 @@ the fixture and verify against the transcript + repo state:
 7. **Scale to the ask** — `--pool 40 --keep 10` yields ~40 generated; a bare
    "give me ideas" may shrink POOL; "be exhaustive" scales it up — inline in
    every case.
-8. **Selection gate** — ideas become beads/plan edits only after the
-   AskUserQuestion multiSelect; nothing is auto-adopted.
+8. **Selection gate** — ideas become beads/plan edits only after the user
+   explicitly selects them from a numbered finalist list; nothing is auto-adopted.
 9. **Pre-slice adoption lands in Later only** — the Widgetline fixture has no
    shipped first slice (no status row, no beads, no artifact), so the run says
    `SLICE_STATUS: pre-slice` before generating, and any adopted finalist is
@@ -110,7 +110,7 @@ T="$(cat /tmp/pig-selftest-dir)"
 mkdir -p "$T/other/docs/plan"
 printf '# Two — plan\n\nAnother plan.\n' > "$T/other/docs/plan/plan.md"
 # From a cwd containing BOTH $T/proj and $T/other (two candidate plan.md, no
-# argument given), the skill must STOP and AskUserQuestion listing the
+# argument given), the skill must STOP and ask the user, listing the
 # candidates — never guess, never run "untargeted" ideation.
 ```
 

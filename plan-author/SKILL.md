@@ -1,6 +1,7 @@
 ---
 name: plan-author
-version: 1.1.0
+metadata:
+  version: "1.1.1"
 description: >-
   Generate a high-quality plan.md from a short brief or idea. Produces the eleven structural
   categories a plan-review checks for — scope lock, acceptance scenarios, architecture, pre-flight
@@ -10,11 +11,15 @@ description: >-
   check budget, and one shippable type per plan (a compound brief is split, not merged). Use when
   starting a new project, port, improvement, integration, migration/cutover, or spike and you need
   a complete plan rather than a blank page.
-argument-hint: "[brief text | path/to/brief.md] [--out path/to/plan.md]"
 allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
 # Plan Author Skill
+
+Invocation: provide brief text or a path to a brief; optionally specify `--out <plan-path>`.
+Resolve relative resource paths below from this skill's directory, wherever it is installed.
+Use the current environment's file, shell, question, and delegation capabilities. The
+frontmatter tool list is retained for Claude Code.
 
 Turn a short brief into a complete `plan.md`. This skill is the inverse of `plan-review`:
 it treats the eleven plan-review categories as generative targets, so the plan it writes is
@@ -32,7 +37,7 @@ The brief is the seed. Find it in this order:
 
 Assess whether the brief is thick enough to ground a plan. It is too thin if you cannot
 answer all three of: (a) what is being built, (b) who or what consumes it, (c) what "done"
-roughly means. If too thin, use AskUserQuestion to ask **at most three** scoping questions:
+roughly means. If too thin, ask **at most three** scoping questions:
 the core mission, the single most important hard constraint, and the primary consumer/interface.
 Do not interrogate beyond three — fill remaining gaps as Open Questions in the plan itself.
 
@@ -52,8 +57,8 @@ Classify the work — this changes which sections get emphasis:
   thresholds, environment, time box, decision record, and default if inconclusive)
 
 If the brief makes the type obvious, proceed. If it is genuinely ambiguous, confirm with one
-AskUserQuestion. For improvement, port, and migration/cutover plans, follow the grounding flow in
-`~/.claude/skills/plan-author/runbooks/FROM-EXISTING-CODE.md` first — scan the real codebase
+question. For improvement, port, and migration/cutover plans, follow the grounding flow in
+`runbooks/FROM-EXISTING-CODE.md` first — scan the real codebase
 so the plan describes what exists, not a guess.
 
 **A compound brief gets one plan per shippable type, never one plan for all of them.** A brief
@@ -76,20 +81,20 @@ Every phase after Phase 0 names the one legacy capability it retires or shadows 
 ## Step 3: Load the Template and the Completeness Bar
 
 Read both:
-- `~/.claude/skills/plan-author/PLAN-TEMPLATE.md` — the full section skeleton for all eleven
+- `PLAN-TEMPLATE.md` — the full section skeleton for all eleven
   categories, with guidance comments showing what "good" looks like per section and a conditional
   type-specific control block for Port, Migration / Cutover and Spike.
-- `~/.claude/skills/plan-author/CHECKLIST-COMPLETENESS.md` — the bar the finished plan must hit.
+- `CHECKLIST-COMPLETENESS.md` — the bar the finished plan must hit.
 
 Also load, for the drafter to reference:
-- `~/.claude/skills/plan-author/references/SECTION-TAXONOMY.md` — canonical headers and order.
-- `~/.claude/skills/plan-author/references/EXAMPLES.md` — GOOD vs WEAK section snippets.
+- `references/SECTION-TAXONOMY.md` — canonical headers and order.
+- `references/EXAMPLES.md` — GOOD vs WEAK section snippets.
 
 ## Step 4: Spawn the Drafter
 
-Spawn the `plan-drafter` subagent. Read `~/.claude/skills/plan-author/subagents/plan-drafter.md`
-for the full agent prompt. Pass it:
-1. The brief (and any AskUserQuestion answers)
+Spawn a `plan-drafter` subagent through the current environment's delegation mechanism. Read
+`subagents/plan-drafter.md` for its full prompt. Pass it:
+1. The brief (and any scoping answers)
 2. The confirmed plan type
 3. The contents of `PLAN-TEMPLATE.md`
 4. The contents of `references/SECTION-TAXONOMY.md` and `references/EXAMPLES.md`
@@ -98,15 +103,16 @@ for the full agent prompt. Pass it:
 
 The drafter writes every section, makes concrete decisions, and converts every genuine unknown
 into a numbered Open Question with an owner and a resolve-by phase.
+If delegation is unavailable, follow the same prompt yourself.
 
 ## Step 5: Self-Score and Backfill
 
 After the drafter returns, score the draft against the completeness bar:
 ```bash
-~/.claude/skills/plan-author/scripts/score-draft.sh <plan-file>
+bash <skill-directory>/scripts/score-draft.sh <plan-file>
 ```
 For every check reported MISSING, re-read the relevant template section and write that section
-directly with the Edit tool — grounded in the plan's own components, never boilerplate. For a
+directly in the file — grounded in the plan's own components, never boilerplate. For a
 Port, Migration / Cutover or Spike, the scorer adds the applicable type-specific checks; do not
 treat those controls as optional. Three base checks are the ones a review's caps hinge on and
 are never satisfied by writing the words: 6.4 (Phase 0 exercises the riskiest real dependency,
@@ -129,4 +135,4 @@ Write the final plan. Then report:
 - Which sections were **generated with concrete decisions** vs. **left as Open Questions**
   (list the numbered Open Questions so the user knows exactly what still needs a human call).
 - Any sections marked N/A and why.
-- The single recommended next step (usually: resolve Open Questions 1–N, then run `/plan-review`).
+- The single recommended next step (usually: resolve Open Questions 1–N, then invoke `plan-review`).

@@ -1,6 +1,7 @@
 ---
 name: plan-idea-gen
-version: 1.1.0
+metadata:
+  version: "1.1.1"
 description: >-
   Generate a large pool of ideas (default 100) for a project anchored to its plan.md, then
   ruthlessly filter to the top K (default 10) via lens-forced generation, clustering,
@@ -10,11 +11,12 @@ description: >-
   held "Later" section, never in the backlog or the bead graph. Use when the user wants to
   brainstorm, ideate, expand a roadmap, or asks for "best ideas" / "top N ideas" for a
   project or plan.
-argument-hint: "[plan.md path or repo] [--pool N] [--keep K] [--constraint \"...\"] [--lens \"...\"]"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, TaskGet
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # plan-idea-gen — wide-then-narrow ideation anchored to a plan.md
+
+Inputs: `[plan.md path or repo] [--pool N] [--keep K] [--constraint "..."] [--lens "..."]`.
 
 Generate POOL ideas (default 100) across forced-diversity lenses, then filter to KEEP
 finalists (default 10) that survive clustering, pairwise ranking, and an adversarial
@@ -24,9 +26,8 @@ the ledger, decides the bead workspace, and receives accepted ideas.
 ## Execution model: ONE context, no agents — MANDATORY
 
 The entire pipeline runs **inline in the invoking context as sequential reasoning
-passes**. Never use the Workflow tool. Never spawn Agent subagents — not for
-generation, not for judging, not even an Explore scout. This is a hard rule, not a
-default (`allowed-tools` above deliberately omits Agent and Workflow).
+passes**. Do not delegate generation, judging, or scouting to agents or an external
+workflow. This is a hard rule, not a default.
 
 Why: every subagent pays ~65–70k tokens of fixed context overhead (system prompt +
 tool schemas) before doing any work, and subagents share no cache. A fanned-out run of
@@ -54,8 +55,8 @@ ladder, in order:
    conversation, use it and state which one you chose.
 3. **Current directory** — if cwd is inside a repo containing exactly one
    `docs/plan/plan.md` (fall back to `**/plan.md`), use it.
-4. **Ambiguous or not found** — if multiple candidates exist, or none, STOP and use
-   AskUserQuestion listing the discovered candidates (repo name + path) as options.
+4. **Ambiguous or not found** — if multiple candidates exist, or none, STOP and ask
+   the user to select a target, listing discovered candidates (repo name + path).
    Never guess between candidates and never run "untargeted" ideation against the home
    directory or the general environment.
 
@@ -80,11 +81,13 @@ bead graph. Say this before Step 1 so the user is not surprised at Step 8.
 
 ## Step 1: Ground (inline scout)
 
-Scout the repo directly with Read/Glob/Grep — no agent. Produce a grounding digest:
+Scout the repo directly with available file and search tools — no agent. Produce a grounding digest:
 what the app already does, architecture, existing features, open plan phases, open
-beads (using the backend the repo actually declares — `.beads/config.json` +
-`.beads/checkpoint/` → bead-rs `bead list --json`; `.beads/config.yaml` → legacy `bf list`;
-never guess, the wrong CLI corrupts the other's store), and anything in `docs/notes/`. Also read the ledger `REPO/docs/notes/ideas-ledger.md` if it exists and
+beads (first compare `.needle.yaml` with the on-disk store: `.beads/config.json` +
+`.beads/checkpoint/` → bead-rs `bead`; `.beads/config.yaml` + flat
+`.beads/issues.jsonl` → legacy bf; never guess or run the wrong CLI against a store;
+if the legacy CLI is unavailable, report that the bead inventory is unverified),
+and anything in `docs/notes/`. Also read the ledger `REPO/docs/notes/ideas-ledger.md` if it exists and
 extract previously considered ideas as `PRIOR` (title + one-line + verdict).
 
 The digest keeps generation from proposing what already exists and judging from
@@ -151,22 +154,28 @@ and may displace weaker survivors. Then select the final KEEP.
 
 Plus run stats: generated / deduped / triaged / killed counts and the ledger path.
 
-**Ledger** — append a dated run section to `REPO/docs/notes/ideas-ledger.md` containing
+**Ledger** — unless the user requested read-only or report-only ideation, append a
+dated run section to `REPO/docs/notes/ideas-ledger.md` containing
 ALL ideas (title, one-line, cluster, verdict + kill reason where applicable), finalists
 marked. This is what future runs dedupe against. Commit it (with the plan.md edit below
-if any) using the standard git identity; push only per the repo's usual rules.
+if any) using the standard git identity; push only per the repo's usual rules. For a
+read-only run, present the dossiers and run stats without changing the ledger, plan,
+or bead store.
 
-**Selection** — AskUserQuestion (multiSelect) over the finalists: which to adopt. For
+**Selection** — ask the user which finalists to adopt, with a numbered list and clear
+acceptance boundaries. No selection or silence means no adoption. For
 adopted ideas, by `SLICE_STATUS`:
 - **`pre-slice`:** append each to the plan's `## Later (held until the first slice ships)`
   section with the gate that admits it. No beads, no backlog row, no phase-table entry.
 - **shipped:** offer to append adopted ideas to the plan.md's roadmap/open-questions
   section so the plan stays the single complete picture, and create beads in REPO's
-  workspace with the backend detected in Step 1 — bead-rs: `bead create --title … --label
-  proposal-pending --label human` (held until an explicit batch admission; if the repo has
-  a genesis bead, `bead dep add <genesis> <new>`), then `bead sync flush-only` when the
-  workspace publishes manually; legacy bf stores keep their own `bf create` / `bf sync
-  --flush-only` recipe. Never run `br`.
+  workspace only when the user has authorized that scoped write. For bead-rs, create
+  each proposal with both `proposal-pending` and `human` labels; keep both until an
+  explicit batch admission of its exact IDs. If the repo has a genesis bead, use
+  `bead dep add <genesis> <new>` only when it reflects a real dependency. Check the
+  current CLI behavior and flush the checkpoint if publication is not automatic.
+  For a legacy bf store, do not substitute `bead`; report that the legacy backend
+  needs its own supported command path. Never run `br`.
 
 ## Key principles
 

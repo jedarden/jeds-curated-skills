@@ -2,7 +2,7 @@
 # plan-vs-built: collect a read-only snapshot of what a repo has ACTUALLY built,
 # so a plan.md can be checked against artifact reality rather than against prose.
 #
-# Strictly read-only and side-effect-free: it never builds, never runs tests
+# Read-only with respect to the audited repo: it never builds, never runs tests
 # (`cargo test` here is intercepted and submits to iad-ci -- a "quick check"
 # would fire off remote CI), never mutates a bead store, never touches a cluster.
 #
@@ -319,15 +319,17 @@ if [[ "$BACKEND" == "bead-rs" && -n "$DECLARED" && "$DECLARED" != "bead-rs" ]]; 
 fi
 
 OPEN_N=0; CLOSED_N=0; INPROG_N=0
-if [[ "$BACKEND" == "bead-rs" ]] && have bead; then
-    bead list --json --limit 2000 > "$SNAP/beads.jsonl" 2>/dev/null
-    if [[ -s "$SNAP/beads.jsonl" ]] && have jq; then
-        OPEN_N="$(jq -rs '[.[]|select(.status=="open")]|length' "$SNAP/beads.jsonl" 2>/dev/null || echo 0)"
-        INPROG_N="$(jq -rs '[.[]|select(.status=="in_progress")]|length' "$SNAP/beads.jsonl" 2>/dev/null || echo 0)"
-        CLOSED_N="$(jq -rs '[.[]|select(.status=="closed")]|length' "$SNAP/beads.jsonl" 2>/dev/null || echo 0)"
-        jq -rs '.[]|select(.status=="closed")|[.id,.title]|@tsv' "$SNAP/beads.jsonl" > "$SNAP/closed-beads.tsv" 2>/dev/null
-        jq -rs '.[]|select(.status=="open" and (.assignee//"")!="")|[.id,.assignee,.title]|@tsv' \
-            "$SNAP/beads.jsonl" > "$SNAP/open-but-assigned.tsv" 2>/dev/null
+if [[ "$BACKEND" == "bead-rs" && -n "$DECLARED" && "$DECLARED" != "bead-rs" ]]; then
+    say "  bead query skipped: backend declaration conflicts with on-disk store"
+elif [[ "$BACKEND" == "bead-rs" ]] && have bead; then
+    if bead list --json --limit 999999 > "$SNAP/beads.json" 2>/dev/null \
+       && have jq && jq -e 'type == "array"' "$SNAP/beads.json" >/dev/null 2>&1; then
+        OPEN_N="$(jq '[.[]|select(.status=="open")]|length' "$SNAP/beads.json")"
+        INPROG_N="$(jq '[.[]|select(.status=="in_progress")]|length' "$SNAP/beads.json")"
+        CLOSED_N="$(jq '[.[]|select(.status=="closed")]|length' "$SNAP/beads.json")"
+        jq -r '.[]|select(.status=="closed")|[.id,.title]|@tsv' "$SNAP/beads.json" > "$SNAP/closed-beads.tsv"
+        jq -r '.[]|select(.status=="open" and (.assignee//"")!="")|[.id,.assignee,.title]|@tsv' \
+            "$SNAP/beads.json" > "$SNAP/open-but-assigned.tsv"
         STUCK="$( { grep -c . "$SNAP/open-but-assigned.tsv" 2>/dev/null || true; } | head -1)"
         STUCK="${STUCK:-0}"
         say "  counts: open=$OPEN_N in_progress=$INPROG_N closed=$CLOSED_N"

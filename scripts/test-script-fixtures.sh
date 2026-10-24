@@ -207,7 +207,7 @@ skill_script() { # skill script... -> path inside this checkout
 # means deleting its entry: a stale entry fails the ratchet.
 FIXTURE_EXEMPT=(
   'plan-review/scripts/score-plan.sh' # deprecated + unreferenced: SKILL.md wires only find-forks.sh and scan-headers.sh, and plan-review/SELF-TEST.md "Structure" pins that state
-  'plan-vs-built/scripts/collect-evidence.sh' # needs a real $HOME/declarative-config checkout, Argo CI template references, container VERSION files and a plausible bead store to produce a meaningful snapshot; a mktemp sandbox fixture would either fake those externalities (false confidence) or exercise only the trivial usage-error path. plan-vs-built/SELF-TEST.md documents the honest manual exercise instead. sweep.sh is a thin parallel wrapper around this same script and isn't in the ratchet's class patterns at all.
+  'plan-vs-built/scripts/collect-evidence.sh' # Full artifact assessment still needs real repo/deployment evidence; test_plan_vs_built_bead_projection below pins its native bead JSON handling and backend-mismatch safety in isolation. The full snapshot smoke remains manual in plan-vs-built/SELF-TEST.md. sweep.sh is a thin parallel wrapper outside this ratchet's class patterns.
 )
 
 # Fixture-class scripts in existence today. Raise by one when adding a script
@@ -1264,6 +1264,66 @@ test_repo_hygiene() {
   assert_rc 2 "non-git directory exits 2"
 }
 
+# Native bead output is one JSON array, not JSONL. Exercise the collector's
+# projection against a real fixture git repo and a controlled CLI response.
+test_plan_vs_built_bead_projection() {
+  echo "=== plan-vs-built: bead-rs projection fixture ==="
+  local fixture_repo="$WORK/pvb-bead-repo"
+  local fixture_bin="$WORK/pvb-bead-bin"
+  local fixture_out="$WORK/pvb-bead-out"
+  mkdir -p "$fixture_repo/docs/plan" "$fixture_repo/.beads/checkpoint" "$fixture_bin" "$WORK/pvb-empty-dc"
+  printf '# Fixture plan\n' > "$fixture_repo/docs/plan/plan.md"
+  printf '{}\n' > "$fixture_repo/.beads/config.json"
+  printf 'bead_cli:\n  backend: bead-rs\n' > "$fixture_repo/.needle.yaml"
+  git -C "$fixture_repo" init -q -b main
+  git -C "$fixture_repo" config user.name 'Fixture'
+  git -C "$fixture_repo" config user.email 'fixture@example.com'
+  git -C "$fixture_repo" add docs/plan/plan.md
+  git -C "$fixture_repo" commit -qm 'Fixture plan'
+
+  cat > "$fixture_bin/bead" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" == 'list --json --limit 999999' ]] || exit 2
+printf 'called\n' > "$PVB_BEAD_CALLED"
+cat <<'JSON'
+[{"id":"open-a","title":"Open A","status":"open","assignee":""},{"id":"open-b","title":"Open B","status":"open","assignee":"worker"},{"id":"working","title":"Working","status":"in_progress","assignee":"worker"},{"id":"done","title":"Done","status":"closed","assignee":""}]
+JSON
+EOF
+  chmod +x "$fixture_bin/bead"
+
+  run_capture env PATH="$fixture_bin:$PATH" DECLARATIVE_CONFIG="$WORK/pvb-empty-dc" \
+    PVB_BEAD_CALLED="$WORK/pvb-bead-called" \
+    bash "$REPO_ROOT/plan-vs-built/scripts/collect-evidence.sh" "$fixture_repo" \
+    --json --out "$fixture_out"
+  assert_rc 0 'collector reads native bead JSON array'
+  if jq -e '.bead_backend == "bead-rs" and .beads == {open:2,in_progress:1,closed:1}' \
+    <<< "$REPLY" >/dev/null; then
+    log_pass 'collector projects all native bead statuses'
+  else
+    log_fail 'collector projects all native bead statuses'
+  fi
+  if grep -qF 'done' "$fixture_out/pvb-bead-repo/closed-beads.tsv" \
+    && grep -qF 'open-b' "$fixture_out/pvb-bead-repo/open-but-assigned.tsv"; then
+    log_pass 'collector writes closed and assigned-open bead lists'
+  else
+    log_fail 'collector writes closed and assigned-open bead lists'
+  fi
+
+  printf 'bead_cli:\n  backend: bf\n' > "$fixture_repo/.needle.yaml"
+  run_capture env PATH="$fixture_bin:$PATH" DECLARATIVE_CONFIG="$WORK/pvb-empty-dc" \
+    PVB_BEAD_CALLED="$WORK/pvb-mismatch-called" \
+    bash "$REPO_ROOT/plan-vs-built/scripts/collect-evidence.sh" "$fixture_repo" \
+    --json --out "$fixture_out"
+  assert_rc 0 'collector reports a backend mismatch'
+  if [[ ! -e "$WORK/pvb-mismatch-called" ]] \
+    && grep -qF 'bead query skipped: backend declaration conflicts' \
+      "$fixture_out/pvb-bead-repo/snapshot.txt"; then
+    log_pass 'collector never runs bead against a mismatched backend'
+  else
+    log_fail 'collector never runs bead against a mismatched backend'
+  fi
+}
+
 # ---------------------------------------------------------------------------
 
 main() {
@@ -1282,6 +1342,7 @@ main() {
   test_api_design_review
   test_find_stubs
   test_plan_vs_built
+  test_plan_vs_built_bead_projection
   test_test_plan_review
   test_release_readiness
   test_diff_review

@@ -20,17 +20,18 @@ only the workflow expectations around it are corrected below.)
 | "find gaps in this plan" | Activates |
 | "review this spec for contradictions" | Activates |
 | "polish this document" | Activates |
-| "/plan-gap-review docs/plan/plan.md" | Activates |
+| "run plan-gap-review on docs/plan/plan.md" | Activates |
 | "compare the plan to what got built" | Does NOT activate — plan-vs-built territory, not gap review |
 
 ## Structure
 
-Single file — `SKILL.md`, no checklists/scripts/subagents:
+Run from the `plan-gap-review` skill directory. The skill has `SKILL.md` and
+`SELF-TEST.md`, with no checklists, scripts, or bundled subagents:
 
 ```bash
-REPO="${REPO:-$HOME/jeds-curated-skills}"
-ls -1 "$REPO/plan-gap-review"   # SKILL.md and SELF-TEST.md only
-grep -q 'bounded delegated analysis' "$REPO/plan-gap-review/SKILL.md" && echo "ok: current design"
+SKILL_DIR="$PWD"
+ls -1 "$SKILL_DIR"   # SKILL.md and SELF-TEST.md only
+grep -q 'bounded delegated analysis' "$SKILL_DIR/SKILL.md" && echo "ok: current design"
 ```
 
 ## Fixture A — planted gaps (in a throwaway git repo; the skill commits)
@@ -102,7 +103,7 @@ principle failing.
 
 **Fix-and-verify shape:** all seven planted gaps are ordinary corrections
 within the original authorization (none require a new product decision), so
-every one is fixed directly by Edit — surgical, not a rewrite — with
+every one is fixed with targeted edits — surgical, not a rewrite — with
 verification against the actual corrections and affected references. The
 commit stages only the exact edited path(s), never a blanket add. A **second
 analysis pass is not required** here: inputs haven't changed since the first

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Six plan skills available in Codex** (2026-10-24, jedscura-1c254789) —
+  `plan-author` 1.1.1, `plan-review` 2.1.1, `plan-gap-review` 2.1.1,
+  `plan-idea-gen` 1.1.1, `plan-to-bead`, and `plan-vs-built` now use
+  Codex-compatible metadata, provider-neutral tool instructions, and
+  skill-relative resources while retaining Claude support. `install-codex.sh`
+  installs self-contained copies of the six skills and preserves differing
+  existing installations. `plan-vs-built` fleet audits are report-only by
+  default; bead writes require an explicitly scoped request. Its collector now
+  parses bead-rs's JSON array correctly, removes the 2,000-issue truncation,
+  and skips bead queries when the declared backend conflicts with the store.
 - **Plan skills learn from the tradegraph-platform rollback** (2026-10-20,
   jedscura-5d5a434d) — a 2,670-line compound plan (port + migration + integration
   + new features) was cut into 298 beads the day after it was written, with no

@@ -12,8 +12,11 @@
 
 ## Skill Structure Validation
 
+For the commands below, set `SKILL_DIR` to the directory containing this
+`SKILL.md`, in either an installed copy or a source checkout.
+
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-vs-built"
+SKILL_DIR="/absolute/path/to/plan-vs-built"
 
 echo "=== Skill Structure ==="
 ls -1 "$SKILL_DIR/"
@@ -34,17 +37,16 @@ service, no `declarative-config` dependency) and its fixture runs
 automatically via `scripts/test-script-fixtures.sh`, wired into the
 pre-commit hook. The steps below are the manual equivalent.
 
-**`sweep.sh` and `collect-evidence.sh` are not automated here — honestly, not
-by oversight.** Both require a real `$HOME/declarative-config` checkout, Argo
-CI template references, a live (or at least plausible) bead store, and
-container `VERSION` files to produce a meaningful snapshot; a mktemp sandbox
-fixture would either fake those externalities (false confidence) or exercise
-only the trivial "not a git repo" exit path (no real coverage). They're
-`FIXTURE_EXEMPT` in `scripts/test-script-fixtures.sh` with this reasoning
-inline. Exercise them manually against a real repo with a plan:
+**Full `sweep.sh` and `collect-evidence.sh` artifact assessment remains a manual
+smoke test.** It needs a real `declarative-config` checkout, Argo CI references,
+a bead store, and container `VERSION` files to produce meaningful verdicts.
+The automated `test_plan_vs_built_bead_projection` fixture in
+`scripts/test-script-fixtures.sh` does pin the collector's bead-rs JSON counts,
+closed/assigned bead lists, and backend-mismatch guard. Exercise the full
+snapshot against a real repo with a plan:
 
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-vs-built"
+SKILL_DIR="/absolute/path/to/plan-vs-built"
 "$SKILL_DIR/scripts/collect-evidence.sh" ~/some-real-repo --out /tmp/pvb-manual
 cat /tmp/pvb-manual/*/snapshot.txt
 ```
@@ -74,7 +76,7 @@ already-working absolute-import path, and both corrected usage-error cases,
 so a regression in any of them shows up here.
 
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-vs-built"
+SKILL_DIR="/absolute/path/to/plan-vs-built"
 cd /tmp
 rm -rf test-phantom-fixture
 mkdir -p test-phantom-fixture/pkg
@@ -192,9 +194,9 @@ anything else.
 
 ## Expected Behaviors
 
-- **Read-only and side-effect-free collection**: `sweep.sh`/`collect-evidence.sh`
-  never build, never run tests, never touch a bead store or a cluster — they
-  only read.
+- **Source read-only collection**: `sweep.sh`/`collect-evidence.sh` never build,
+  run tests, or mutate a bead store or cluster; they write only audit snapshots
+  under the chosen output directory.
 - **`check-phantom-refs.py` always exits 0 on a successful scan** (findings are
   data); exit 2 is usage error only.
 - **A flag is not a verdict** — `sweep.sh`'s SCORE/FLAGS rank where to look;
@@ -202,8 +204,9 @@ anything else.
 - **Bead backend detection before writing** — same bead-rs/bf detection
   discipline as `find-stubs` and `plan-to-bead`; a MISMATCH or bf-shaped store
   stops the run rather than improvising.
-- **`--label human`** on every filed gap bead, alongside `--label plan-gap` —
-  stays out of the ready frontier until a human admits it.
+- **Report-only default and scoped writes** — an unqualified fleet sweep files no
+  beads. New gap proposals require explicit target repos and carry `plan-gap`,
+  `proposal-pending`, and `human` until exact IDs are admitted.
 - **`DIVERGENT`/`PLAN-STALE` ask before writing** — a gap can mean the code is
   behind the plan or the plan is behind the code; beading phantom work is worse
   than missing a gap.

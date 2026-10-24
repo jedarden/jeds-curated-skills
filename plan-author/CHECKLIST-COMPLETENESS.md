@@ -3,7 +3,7 @@
 The bar a generated plan must clear. Mirrors the eleven `plan-review` categories, but read as
 GENERATIVE TARGETS: every box should be checkable by the time the plan is written. Each item
 carries a one-line "good looks like" note. The self-score script in
-`~/.claude/skills/plan-author/scripts/score-draft.sh` greps for these; the drafter and the
+`scripts/score-draft.sh` (relative to this skill directory) greps for these; the drafter and the
 backfill step satisfy them.
 
 A section that is a single vague sentence does NOT pass. A section that hides everything behind

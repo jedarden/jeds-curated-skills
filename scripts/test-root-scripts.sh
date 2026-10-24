@@ -22,6 +22,10 @@
 #                 check-installed.sh report the removed state cleanly
 #     shared-lib skills install self-contained, runnable scripts: their
 #     inlined helpers do not depend on a lib/ sibling in ~/.claude/skills/
+#   install-codex.sh behavior:
+#     installs only the six supported plan skills into a fake Codex home,
+#     preserves unrelated skills, inlines shared helpers, is idempotent, and
+#     backs up installer-owned copies before an explicit replacement
 #
 #   install-hooks.sh pre-commit hook install:
 #     writes an executable .git/hooks/pre-commit into the repo that contains
@@ -108,6 +112,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CHECK_INSTALLED="$REPO_ROOT/scripts/check-installed.sh"
 INSTALL="$REPO_ROOT/install.sh"
+CODEX_INSTALL="$REPO_ROOT/install-codex.sh"
 REVIEW_TIMER_INSTALL="$REPO_ROOT/scripts/install-review-timers.sh"
 
 # Drop the ambient git context — same fix as test-script-fixtures.sh, for the
@@ -217,6 +222,10 @@ run_check_installed() {
 # $0, so the cwd is irrelevant here.
 run_install() {
   env HOME="$FAKE_HOME" bash "$INSTALL" "$@"
+}
+
+run_codex_install() {
+  env HOME="$FAKE_HOME" CODEX_HOME="$FAKE_HOME/.codex" bash "$CODEX_INSTALL" "$@"
 }
 
 # Same two, but against a fixture COPY of the repo instead of $REPO_ROOT.
@@ -2143,6 +2152,56 @@ test_push_ci_contracts() {
     test ! -e "$PUSH_CI_DIR/.kubectl-called"
 }
 
+test_codex_install_contracts() {
+  echo ""
+  echo "=== install-codex.sh plan skill contracts ==="
+  new_fake_home
+  local codex_skills="$FAKE_HOME/.codex/skills"
+  local list_output
+  list_output="$(run_codex_install --list)"
+  expect_ok "Codex installer lists plan-review" grep -qx 'plan-review' <<< "$list_output"
+  expect_ok "Codex installer excludes Claude-only usage-statusline" \
+    bash -c '! grep -qx usage-statusline <<< "$1"' _ "$list_output"
+
+  expect_exit 0 "Codex plan skills install" run_codex_install
+  local skill
+  for skill in plan-author plan-review plan-gap-review plan-idea-gen plan-to-bead plan-vs-built; do
+    expect_ok "$skill installed into Codex home" test -f "$codex_skills/$skill/SKILL.md"
+  done
+  expect_ok "Codex install inlines plan-author helper" \
+    grep -qF 'Inlined from lib/common.sh during install' \
+    "$codex_skills/plan-author/scripts/score-draft.sh"
+  expect_ok "Codex install retains executable scripts" \
+    test -x "$codex_skills/plan-author/scripts/score-draft.sh"
+  local before
+  before="$(snapshot_tree "$codex_skills")"
+  expect_exit 0 "Codex re-install is idempotent" run_codex_install
+  expect_ok "Codex re-install preserves bytes and modes" \
+    test "$(snapshot_tree "$codex_skills")" = "$before"
+
+  printf 'local edit\n' >> "$codex_skills/plan-review/SKILL.md"
+  expect_exit 1 "Codex install refuses a differing copy by default" \
+    run_codex_install plan-review
+  expect_ok "Codex install preserves local edit on refusal" \
+    grep -qF 'local edit' "$codex_skills/plan-review/SKILL.md"
+  expect_exit 0 "explicit replacement backs up prior Codex copy" \
+    run_codex_install --replace plan-review
+  expect_ok "Codex replacement restores source skill" \
+    cmp -s "$REPO_ROOT/plan-review/SKILL.md" "$codex_skills/plan-review/SKILL.md"
+  expect_ok "Codex replacement retains the local edit in backup" \
+    bash -c 'grep -lF "local edit" "$1"/skill-backups/plan-review.*/SKILL.md >/dev/null' \
+    _ "$FAKE_HOME/.codex"
+
+  new_fake_home
+  codex_skills="$FAKE_HOME/.codex/skills"
+  mkdir -p "$codex_skills/plan-review"
+  printf 'foreign skill\n' > "$codex_skills/plan-review/SKILL.md"
+  expect_exit 1 "Codex install never replaces a foreign same-name skill" \
+    run_codex_install --replace plan-review
+  expect_ok "foreign Codex skill remains untouched" \
+    grep -qx 'foreign skill' "$codex_skills/plan-review/SKILL.md"
+}
+
 main() {
   if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --review-timers ) ]]; then
     echo "Usage: $0 [--review-timers]" >&2
@@ -2159,6 +2218,7 @@ main() {
     test_check_installed_contracts
     test_stale_inline_contracts
     test_install_contracts
+    test_codex_install_contracts
     test_install_hooks_contracts
     test_workspace_review_child
     test_review_timer_contracts

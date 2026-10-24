@@ -1,4 +1,4 @@
-# Self-Test: plan-review 2.0
+# Self-Test: plan-review 2.1
 
 ## Trigger phrases
 
@@ -12,14 +12,17 @@
 
 ## Structure
 
+Run these snippets from the repository root, or set `REPO` to the checkout path.
+
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-review"
+REPO="${REPO:-$PWD}"
+SKILL_DIR="$REPO/plan-review"
 ls -1 "$SKILL_DIR"                       # SKILL.md REPORT-TEMPLATE.md SELF-TEST.md references/ runbooks/ scripts/
 ls -1 "$SKILL_DIR/references"            # DECISION-LEDGER.md EXEMPLARS.md SECTION-HEADER-TAXONOMY.md STRUCTURAL-SWEEP.md
 ls -1 "$SKILL_DIR/runbooks"              # FAST-PATH.md LOCK.md MULTI-PLAN-COMPARISON.md
 ls -1 "$SKILL_DIR/scripts"               # find-forks.sh scan-headers.sh (score-plan.sh deprecated, unreferenced)
 test ! -d "$SKILL_DIR/subagents" && echo "ok: no subagents (inline by design)"
-grep -q '^version: 2' "$SKILL_DIR/SKILL.md" && echo "ok: version 2.x"
+grep -q '^  version: "2\.' "$SKILL_DIR/SKILL.md" && echo "ok: metadata version 2.x"
 ```
 
 ## `find-forks.sh` fixture test
@@ -27,7 +30,8 @@ grep -q '^version: 2' "$SKILL_DIR/SKILL.md" && echo "ok: version 2.x"
 The fixture has known counts. Any drift in the patterns shows up here.
 
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-review"
+REPO="${REPO:-$PWD}"
+SKILL_DIR="$REPO/plan-review"
 FIX="$(mktemp)"
 cat > "$FIX" <<'EOF'
 # Fixture Plan
@@ -86,7 +90,8 @@ and rolled back ten weeks later (2026-10-20). It is deliberately well-formed: ty
 phased, gated. Every structural check it would pass is the point — only the caps catch it.
 
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-review"
+REPO="${REPO:-$PWD}"
+SKILL_DIR="$REPO/plan-review"
 NEG="$(mktemp)"
 cat > "$NEG" <<'EOF'
 # Trading Platform — consolidated architecture and implementation plan
@@ -171,7 +176,8 @@ Same fixture document as `find-forks.sh` above — one byte-identical input pins
 both plan-review scripts.
 
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-review"
+REPO="${REPO:-$PWD}"
+SKILL_DIR="$REPO/plan-review"
 # reuse $FIX from the find-forks fixture above
 "$SKILL_DIR/scripts/scan-headers.sh" "$FIX"
 ```
@@ -206,7 +212,8 @@ calls) changed; update this section and the fixture suite together, deliberately
 
 ```bash
 CORPUS="$HOME/Research/dicklesworthstone-plan-corpus/documents"
-SKILL_DIR="$HOME/.claude/skills/plan-review"
+REPO="${REPO:-$PWD}"
+SKILL_DIR="$REPO/plan-review"
 # A spike plan: expect `DEFER 2` (two "(TBD)" owners) and zeros elsewhere; the review should
 # classify it as Spike and judge it by S.1–S.6 (question, metrics, environment, time box,
 # where recorded, default) — not by the structural categories.

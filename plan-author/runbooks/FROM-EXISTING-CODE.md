@@ -21,7 +21,7 @@ For a true Greenfield plan, skip this runbook — there is no code to scan.
 
 If the brief names a path or repo, use it. Otherwise scan the working tree for the project root
 (the directory holding the build manifest — `package.json`, `Cargo.toml`, `pyproject.toml`,
-`go.mod`, etc.). Confirm with AskUserQuestion only if multiple unrelated roots exist.
+`go.mod`, etc.). Ask the user only if multiple unrelated roots exist.
 
 ## Step 2: Map the Structure
 

@@ -1,6 +1,6 @@
 # jeds-curated-skills
 
-A collection of Claude Code skills for agent-driven software development workflows.
+A collection of Claude Code and Codex skills for agent-driven software development workflows.
 
 ## Installation
 
@@ -54,6 +54,26 @@ The installer recognizes this in-place layout and only performs the
 out-of-tree setup; it does not remove the cloned skill. It merges the
 `statusLine` setting alongside other keys and leaves an existing `statusLine`
 that runs another command untouched.
+
+### Codex plan skills
+
+The six plan skills (`plan-author`, `plan-review`, `plan-gap-review`,
+`plan-idea-gen`, `plan-to-bead`, and `plan-vs-built`) also work in Codex.
+Install them from this checkout into `${CODEX_HOME:-$HOME/.codex}/skills`:
+
+```bash
+./install-codex.sh --list
+./install-codex.sh                  # all six
+./install-codex.sh plan-review     # one skill
+```
+
+The Codex installer copies the skill resources and inlines the shared Bash
+helpers into scripts that need them. It does not touch Claude's installation.
+When an installed Codex copy differs, inspect it before running
+`./install-codex.sh --replace <skill>`; replacement backs up the previous
+installer-owned copy under `${CODEX_HOME:-$HOME/.codex}/skill-backups/`.
+Codex detects new skills automatically; restart Codex if a newly installed
+skill does not appear.
 
 ## Checking for drift
 
@@ -720,8 +740,9 @@ different plan types.
 
 ### Versioning
 
-Each skill has a `version: X.Y.Z` field in its SKILL.md frontmatter and a corresponding
-entry in the root CHANGELOG.md. When a skill's SKILL.md, checklists, or scripts change
+Versioned skills record `version: X.Y.Z` in their SKILL.md frontmatter, or
+`metadata.version` for skills shared with Codex, with a corresponding entry in
+the root CHANGELOG.md. When a skill's SKILL.md, checklists, or scripts change
 materially (typo fixes excluded), bump its version and add a CHANGELOG entry.
 
 This convention supports drift detection: users with local skill copies can compare their

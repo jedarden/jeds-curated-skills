@@ -1,13 +1,13 @@
 ---
 name: plan-gap-review
-version: 2.1.0
 description: >-
   Review a document for consequential gaps, contradictions, and missing pieces;
   use bounded delegated analysis, apply authorized corrections, and verify them,
   within a round budget that stops when a round opens more gaps than it closes.
   Use when the user wants to review, audit, polish, or find gaps in a plan, spec, or document.
-argument-hint: "[path/to/document.md]"
-allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, TaskCreate, TaskUpdate, TaskList, TaskGet, AskUserQuestion
+metadata:
+  version: "2.1.1"
+allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # Plan Gap Review Skill
@@ -19,11 +19,12 @@ authorization to implement new scope.
 
 ## Step 1: Identify the Document
 
-If the user provided a file path as an argument, use that. Otherwise:
+The invocation may include a document path. If the user provided one, use it.
+Otherwise:
 
 1. Check if there's an obvious document in context (e.g., a plan.md being discussed)
 2. Look for common plan/spec files: `**/plan.md`, `**/spec.md`, `**/design.md`, `**/ARCHITECTURE.md`
-3. If still unclear, use AskUserQuestion to ask: "Which document should I review? Provide the file path."
+3. If still unclear, ask the user which document to review and request its path.
 
 Confirm the document exists and read it.
 

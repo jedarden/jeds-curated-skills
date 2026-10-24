@@ -1,10 +1,10 @@
 # Self-Test: plan-to-bead
 
-Prose-only skill — the surface is the decomposition logic (single-task tests,
+Prose-only skill — the surface is the decomposition logic (outcome boundaries,
 the decision filter, the coverage/scoping/dependency verification loop), not
 a script. The fixture below is a planted plan.md built so each candidate task
 lands on a known classification; a change to the decision filter or the
-single-task tests shows up as a changed classification here.
+ownership criteria shows up as a changed classification here.
 
 ## Trigger Phrases
 
@@ -13,15 +13,17 @@ single-task tests shows up as a changed classification here.
 | "turn this plan into beads" | Activates |
 | "decompose this plan into tasks" | Activates |
 | "check my bead graph against the plan" | Activates (audit mode, repo already beaded) |
-| "/plan-to-bead docs/plan/plan.md" | Activates |
+| "run plan-to-bead on docs/plan/plan.md" | Activates |
 | "review my plan" · "is this plan ready to implement" | Does NOT activate — that is `plan-review` (plan-to-bead may suggest it first if the plan is too thin to decompose) |
 
 ## Structure
 
+Run from the `plan-to-bead` skill directory:
+
 ```bash
-SKILL_DIR="$HOME/.claude/skills/plan-to-bead"
+SKILL_DIR="$PWD"
 ls -1 "$SKILL_DIR"              # SKILL.md SELF-TEST.md
-grep -q '^allowed-tools:.*TaskCreate' "$SKILL_DIR/SKILL.md" && echo "ok: bounded-child tooling present"
+grep -q '^allowed-tools:.*Agent' "$SKILL_DIR/SKILL.md" && echo "ok: Claude delegation enabled"
 grep -q 'never create a decision bead' "$SKILL_DIR/SKILL.md" && echo "ok: hard rule present"
 grep -q 'Review gate (hard)' "$SKILL_DIR/SKILL.md" && echo "ok: review gate present"
 grep -q 'Bead the first slice and the phase after it' "$SKILL_DIR/SKILL.md" && echo "ok: two-phase rule present"
@@ -33,7 +35,7 @@ grep -q 'Plan drift (audit mode)' "$SKILL_DIR/SKILL.md" && echo "ok: drift audit
 
 The decomposition fixture below has **no** `docs/notes/plan-review-*.md` beside it. The
 first thing a run must do after reading the plan is stop at Step 2's review gate and
-say to run `/plan-review` — zero beads drafted, zero created. Then plant a memo and
+say to run `plan-review` — zero beads drafted, zero created. Then plant a memo and
 confirm the gate opens or stays shut by verdict:
 
 ```bash
@@ -88,7 +90,7 @@ echo "$T" > /tmp/plan-to-bead-selftest-dir
 
 | Candidate | Classification | Because |
 |---|---|---|
-| "Build the self-updater and trust pointer verification" | **BUNDLE → split into 2 beads** | Title test: "and" joins two distinct mechanisms (self-updater; trust-pointer verification) with no shared implementation step |
+| "Build the self-updater and trust pointer verification" | **BUNDLE → split into 2 beads** | The self-updater and trust-pointer verification have independent deliverables and acceptance boundaries; the conjunction alone is not the reason to split |
 | "Source and commit the pinned NYSE market-calendar data file" | **Legitimate single bead** | Sourcing/committing an artifact is work, even though *which* calendar vendor was a choice — the choice itself (if still open) goes to Open Questions, not this bead |
 | "Choose and pin the type checker for the TypeScript client" | **DECISION — not a bead** | Explicit "Choose X" shape; the brief names a real unresolved tradeoff (strict-mode cost) the team hasn't weighed. Must be routed to the plan's Open Questions section with a proposed answer, never created as a `DECISION:`-labeled or disguised bead |
 | "Implement the digest renderer: parses the event batch and produces the formatted output" | **Legitimate single bead** | Reads as "do X" (implement the renderer); "parses... and produces" describes the one task's internal behavior, not two separable consumers or phases |
@@ -103,7 +105,7 @@ exactly 2 beads, not stay bundled and not split into 3+.
 Then, LLM in the loop:
 
 ```
-/plan-to-bead /tmp/plan-to-bead-selftest-dir/docs/plan/plan.md
+Run plan-to-bead on /tmp/plan-to-bead-selftest-dir/docs/plan/plan.md
 ```
 
 - Step 2 detects the (nonexistent) bead backend for the fixture dir and
@@ -120,10 +122,11 @@ Then, LLM in the loop:
 
 - **A decision is never a bead** — the hard rule binds drafting (Step 3),
   verification fixes (Step 6), and the genesis bead (Step 9) alike.
-- **Single-task tests are applied per candidate, not just at a glance**: title
-  needs "and"/plural/number word; phase-boundary; parse-vs-dispatch;
-  verb-phrase. Splitting too far (an atomic task cut for no reason) is also a
-  defect, not just under-splitting.
+- **Outcome boundaries are checked per candidate**: split independent
+  deliverables or real dependencies, while keeping necessary implementation,
+  tests, documentation, verification, and delivery under one owner. A title's
+  conjunction or plural noun does not itself justify a split. Splitting an
+  atomic outcome is also a defect, not just under-splitting.
 - **Dedup before drafting**: an existing bead covering a candidate is matched,
   not duplicated — a run against an already-fully-beaded repo is a pure audit.
 - **Bead backend detected, never assumed** — `.beads/config.json` → bead-rs;

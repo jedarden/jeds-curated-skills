@@ -9,7 +9,7 @@ lines. Output is a verdict and the forks, not a memo. No structural sweep.
    the Architecture, Data, Phasing, and Open Questions sections in full.
 2. **Run the locator:**
    ```bash
-   ~/.claude/skills/plan-review/scripts/find-forks.sh <plan>
+   bash <skill-directory>/scripts/find-forks.sh <plan>
    ```
    Every DEFER and SHADOW hit is a candidate fork; every UNQUANTIFIED hit is a knob without a
    number; every PROD-ORACLE hit is a candidate Cap C9. Read the line, decide if it is real.

@@ -84,7 +84,7 @@ number inline where the decision would go: "(see Open Question 3)".
 - **Greenfield:** mark §13.2 Migration as "N/A — greenfield, no existing data."
 
 ### Step 6: Write the File
-Write the complete plan to the target path with the Write tool. Delete all `<!-- guidance -->`
+Write the complete plan to the target path. Delete all `<!-- guidance -->`
 comments and replace every placeholder. Set the date stamp and the type in the header.
 
 ## Output

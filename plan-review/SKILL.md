@@ -1,6 +1,7 @@
 ---
 name: plan-review
-version: 2.1.0
+metadata:
+  version: "2.1.1"
 description: >-
   Pre-flight review of a software plan that hunts for the decisions an implementer will be
   forced to make that the plan has not made — and proposes each one — so the plan itself is the
@@ -13,11 +14,15 @@ description: >-
   accepted decisions into the plan where an implementer will actually read them. Use before
   implementation begins, before decomposing a plan into beads (plan-to-bead refuses without
   this review's memo), or whenever a project keeps spawning ADRs after the plan was "done".
-argument-hint: "[path/to/plan.md] [--fast] [--lock DN-1,DN-3 | --lock all]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
 # Plan Review
+
+Invocation: provide a plan path, optionally with `--fast` or `--lock DN-1,DN-3` / `--lock all`.
+Resolve relative resource paths below from this skill's directory, wherever it is installed.
+Use the current environment's file, shell, and question capabilities. The frontmatter tool
+list is retained for Claude Code.
 
 **Thesis.** In-flight pivots are not caused by missing section headers. They are caused by
 *unmade decisions* meeting reality: an implementer (increasingly an autonomous worker holding
@@ -37,7 +42,7 @@ other. Plans up to ~6k lines fit; for larger ones read in section-sized chunks, 
 
 - Path argument → use it. Otherwise exactly one `docs/plan/plan.md` under cwd → use it.
   Otherwise scan `**/plan.md`, `**/PLAN*.md`, `**/design.md`, `**/ARCHITECTURE.md`; if several,
-  AskUserQuestion once.
+  ask the user once.
 - `--fast` → follow `runbooks/FAST-PATH.md` (caps + forks only, ~5 minutes) and stop.
 - `--lock …` → a memo from a previous run must exist next to the plan (Step 6 names where);
   follow `runbooks/LOCK.md` and stop. If none exists, run the full review first.
@@ -76,8 +81,8 @@ workstreams are explicitly held and not decomposed (plan-to-bead honours that ho
 ## Step 2 — Mechanical pre-pass (locators, never verdicts)
 
 ```bash
-~/.claude/skills/plan-review/scripts/find-forks.sh <plan>     # DEFER / HEDGE / SHADOW / UNQUANTIFIED / PROD-ORACLE hits with line numbers
-~/.claude/skills/plan-review/scripts/scan-headers.sh <plan>   # section map with line numbers
+bash <skill-directory>/scripts/find-forks.sh <plan>     # DEFER / HEDGE / SHADOW / UNQUANTIFIED / PROD-ORACLE hits with line numbers
+bash <skill-directory>/scripts/scan-headers.sh <plan>   # section map with line numbers
 ```
 
 A `PROD-ORACLE` hit is a sentence admitting that the only way to exercise something is the
@@ -211,8 +216,9 @@ Every finding anchors to `file:line`. Save it so it outlives the transcript:
 
 Then print the verdict line, the DN list (one line each), and the memo path. Do **not** edit
 the plan in this pass — decisions belong to the human; your job was to make saying "yes" cheap.
-Close with exactly one suggested next action: `/plan-review --lock all` (or a subset) if the
-proposals are sound, or the single cap to fix if NOT READY.
+Close with exactly one suggested next action: invoke `plan-review` in lock mode for all
+or a subset of accepted decisions if the proposals are sound, or fix the single cap
+if NOT READY.
 
 ## Step 9 — `--lock` (separate invocation)
 

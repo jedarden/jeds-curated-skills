@@ -10,25 +10,27 @@ description: >-
   deliverable does not exist. Use when asked what's left to build, whether a project is
   really done, how far the code has drifted from the plan, or to turn that gap into
   tracked work.
-argument-hint: "[repo-path-or-plan.md] [--create-beads] [--filter <regex>]"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # Plan-vs-Built Skill
+
+Inputs: `[repo-path-or-plan.md] [--create-beads] [--filter <regex>]`.
 
 `plan-to-bead` asks "does every plan item have a bead?" This skill asks the harder
 question: **does every plan item have a working artifact?** A repo can have a complete,
 fully-wired, 100%-closed bead graph and still not build, not deploy, and not do the thing
 the plan promised. Closure is self-reported; artifacts are not.
 
-The output is a per-deliverable verdict table backed by observations, plus beads for the
-gaps that are genuinely code gaps.
+The default output is a per-deliverable verdict table backed by observations. Bead
+changes require a scoped, explicit request; a fleet sweep alone is report-only.
 
 ## Step 1: Resolve the scope — **all repos is the default**
 
-**With no path argument, sweep every repo under cwd that has a plan.** Do not ask which
-one. The question this skill answers — "is the plan actually built?" — is a fleet-wide
-question, and asking the user to nominate a repo pre-selects for the projects they already
+**With no path argument, sweep every repo under cwd that has a plan.** Keep the
+discovery root at cwd; do not silently widen it to a home directory or filesystem
+root. Do not ask which one. The question this skill answers — "is the plan actually
+built?" — is a fleet-wide question, and asking the user to nominate a repo pre-selects for the projects they already
 suspect, which are exactly the ones least likely to be hiding a silent gap. A repo nobody
 has thought about in three weeks is the one whose plan has quietly drifted.
 
@@ -41,9 +43,9 @@ Resolution ladder:
 | a repo dir or a plan.md path | that one repo |
 | a plan.md already in conversation context | that one repo |
 
-`AskUserQuestion` is for **direction**, not for target selection — reserve it for the
-`DIVERGENT` decision in Step 6 (converge the code, or amend the plan?), where guessing
-manufactures work. Choosing which repos to look at is not that kind of question.
+Ask the user for a **direction** only when repo evidence cannot settle a material
+`DIVERGENT` decision (converge code or amend the plan). Choosing which repos to
+inspect is already governed by the scope above.
 
 Repos with no plan are silently out of scope; that is a scoping rule, not a finding. This
 skill checks code against a plan, and inventing the plan from the code would make the
@@ -51,10 +53,17 @@ comparison circular. If a *named* target has no plan.md, stop and say so.
 
 ## Step 2: Sweep every repo for artifact reality
 
+Resolve `SKILL_DIR` as the directory containing this `SKILL.md`, whether it is
+installed for Claude or Codex or read from a checkout. Choose an output directory
+outside every audited repo, then invoke the scripts relative to `SKILL_DIR`.
+Keep the scan bounded to the intended cwd and use `--jobs`/`--depth` when the
+candidate set is large:
+
 ```bash
-~/.claude/skills/plan-vs-built/scripts/sweep.sh ~ --out <scratchpad>/pvb
+AUDIT_OUT="$(mktemp -d "${TMPDIR:-/tmp}/plan-vs-built.XXXXXX")"
+"$SKILL_DIR/scripts/sweep.sh" "$PWD" --out "$AUDIT_OUT"
 # one repo only:
-~/.claude/skills/plan-vs-built/scripts/collect-evidence.sh <repo> --out <scratchpad>/pvb
+"$SKILL_DIR/scripts/collect-evidence.sh" "$TARGET_REPO" --out "$AUDIT_OUT"
 ```
 
 `sweep.sh` discovers every git repo under the root with a plan, runs the collector against
@@ -62,8 +71,9 @@ each in parallel, and writes `index.json` / `index.tsv` plus a per-repo
 `<out>/<repo>/snapshot.txt`. Useful flags: `--filter <regex>`, `--jobs N` (default 6),
 `--depth N`.
 
-Both scripts are read-only and side-effect-free by design: they never build, never run
-tests, never touch a bead store or a cluster. The collector reports repo/branch/dirty
+Both scripts inspect source repos without changing them: they never build, run tests,
+or mutate a bead store or cluster. They do write snapshots under `AUDIT_OUT`.
+The collector reports repo/branch/dirty
 state, plan files, build outputs (flagging any artifact **older than HEAD** — stale
 evidence of a source tree that no longer exists), test-file presence,
 `containers/*/VERSION`, where those images are referenced in `declarative-config`, Argo CI
@@ -78,8 +88,8 @@ Two lines of its output do most of the work:
   **Verify this one before reporting it.** It is a *name* match, and names drift: the
   image may be lowercase where the repo is not (`AIVC` → `ronaldraygun/aivc`), prefixed
   with the repo (`containers/aggregator` → `ronaldraygun/commitgraph-aggregator`), or on a
-  different registry entirely (`ghcr.io/jedarden/sun-sim`). A single
-  `grep -rhoiE '[a-z0-9./-]*/<name>:' ~/declarative-config` settles it, and skipping that
+  different registry entirely (`ghcr.io/jedarden/sun-sim`). Search for the actual
+  image reference in the configured `declarative-config` checkout; skipping that
   step is how a healthy deployment gets beaded as missing.
 - **`VERSION=x.y.z` vs the pinned tag in declarative-config** — a version drift means the
   cluster is running something other than what the repo's HEAD describes. Note that hits
@@ -115,7 +125,7 @@ encodes, all of which cost real findings when got wrong:
 - A TypeScript `import './x.js'` is satisfied by `x.ts`.
 
 Run it standalone on one repo with
-`scripts/check-phantom-refs.py <repo>`; add `--json` for counts.
+`"$SKILL_DIR/scripts/check-phantom-refs.py" <repo>`; add `--json` for counts.
 
 ## Step 3: Rank the sweep, then declare how deep you actually went
 
@@ -179,6 +189,10 @@ Work up the ladder and stop as soon as a verdict is settled:
 4. **Runs** — execute the binary, curl the endpoint, load the module.
 5. **Deployed** — the read-only kubectl proxy for the cluster in question.
 
+If the user requested a read-only audit, use existing build, test, CI, and runtime
+evidence rather than starting builds or tests. Record what could not be proved as
+`UNPROVEN`; do not turn a read-only request into a bead or repository write.
+
 Environment traps that will otherwise produce a false verdict:
 
 - **`cargo test` is intercepted** on this box and submits to iad-ci via `rust-verify`.
@@ -203,12 +217,12 @@ Environment traps that will otherwise produce a false verdict:
 | Verdict | Meaning | Direction of fix |
 |---|---|---|
 | `BUILT` | artifact exists, is current, and something exercises it | none |
-| `UNPROVEN` | it exists and compiles, but nothing tests, runs, or deploys it | bead: prove it |
-| `PARTIAL` | some named sub-pieces present, others missing | bead(s): the missing pieces only |
-| `STUB` | signature/route/file exists, body is placeholder | bead: implement it |
-| `ABSENT` | nothing in the tree corresponds to it | bead: build it |
+| `UNPROVEN` | it exists and compiles, but nothing tests, runs, or deploys it | propose proof work |
+| `PARTIAL` | some named sub-pieces present, others missing | propose the missing pieces only |
+| `STUB` | signature/route/file exists, body is placeholder | propose implementation |
+| `ABSENT` | nothing in the tree corresponds to it | propose build work |
 | `DIVERGENT` | something was built, but not what the plan describes | **ask** — converge code, or amend plan |
-| `PLAN-STALE` | reality is right; the plan is out of date or was superseded | edit plan.md, **no bead** |
+| `PLAN-STALE` | reality is right; the plan is out of date or was superseded | propose a plan correction, **no bead** |
 
 `UNPROVEN` is not a lesser `BUILT`. Untested, unwired, or undeployed code is the specific
 state this environment keeps rediscovering the expensive way, and it is worth its own bead
@@ -219,7 +233,7 @@ is behind the plan *or* that the plan is behind the code — a deliberate descop
 superseded design, an ADR that changed direction. Beading phantom work is the main way
 this skill can do damage: it manufactures work that a fleet will dutifully perform. When
 the direction isn't obvious from the repo's own history (check `docs/adr/`, `docs/notes/`,
-and the commits around the divergence first), use AskUserQuestion rather than guessing.
+and the commits around the divergence first), ask the user rather than guessing.
 
 ## Step 7: Audit the closed beads against the verdicts
 
@@ -236,9 +250,10 @@ exit status (`classify(0,false) == Success`), so a worker that exits cleanly wit
 building anything is recorded as a success. Expect false closures in any repo a fleet has
 worked; treat zero of them as a claim to verify, not a relief.
 
-**Reopening is safe by default.** As of 2026-08-24, `bead reopen` clears the assignee
-automatically, so a reopened bead is immediately visible to the ready frontier — no
-follow-up `--clear-assignee` is needed after `bead reopen` itself:
+Report false closures with bead IDs and evidence. Reopen only when the user explicitly
+authorizes restoring that already approved work; reopening can put it back on the
+autonomous frontier. As of 2026-08-24, `bead reopen` clears the assignee automatically.
+Verify visibility after an authorized reopen:
 
 ```bash
 bead reopen <id>
@@ -258,9 +273,9 @@ bead update <id> --clear-assignee
 bead list --ready | grep <id>
 ```
 
-The snapshot's `open-but-assigned.tsv` lists any beads already stuck this way — worth
-clearing while you are here, since a starved frontier makes every gap in this report
-permanent.
+The snapshot's `open-but-assigned.tsv` lists candidates. Report them separately;
+clear an assignee only when the existing work and its ownership are verified and the
+request authorizes that operational change.
 
 Prefer reopening the original bead when its description still describes the right work.
 Write a **new** bead instead when the original's description is wrong or vague — bead-rs
@@ -274,7 +289,7 @@ Detect, never assume — Step 2's snapshot already printed both the on-disk shap
 
 - `.beads/config.json` + `.beads/checkpoint/` → **bead-rs** (`bead`)
 - `.beads/config.yaml` + flat `.beads/issues.jsonl` → **legacy bf**
-- No `.beads/` → greenfield; `bead init --prefix <short-repo-prefix>`
+- No `.beads/` → no bead workspace; initializing one is a separate scoped write
 
 Running the wrong CLI against a store does not fail cleanly — it reports a generic SQLite
 column error, and applying the other tool's recovery recipe to that silently reinitializes
@@ -282,20 +297,28 @@ the store with the wrong schema and destroys live data. If the snapshot printed 
 or the store is bf-shaped (`bf` is decommissioned on this box and not on PATH), stop and
 report it blocked rather than improvising.
 
-See `plan-to-bead`'s backend command map for the full bead-rs/bf translation table;
-argument order differs in ways that wire a graph backwards without erroring.
+If a legacy backend must be written, consult the repository's current supported
+command map and verify argument order before any mutation.
 
-## Step 9: Create the gap beads (only with `--create-beads` or an explicit ask)
+## Step 9: Create the gap beads (only for an explicitly authorized scope)
 
-**Dedup first.** Read the open beads (`bead list --json --limit 2000`). If an open bead
-already covers a gap, record the match and move on — a duplicate bead is not a tracking
+The default audit, including a fleet sweep, writes no beads. `--create-beads` on a
+named repo or an explicit request naming repos authorizes proposal creation there.
+With no named repo, present a batch with exact repo, gap, and acceptance boundary,
+then get explicit admission of the target set before changing any bead store. Silence
+does not admit a batch. Do not create beads for decisions or confirmed `PLAN-STALE`
+items; resolve `DIVERGENT` direction first.
+
+**Dedup first.** Read all existing beads (`bead list --json --limit 999999`) and
+check open and in-progress owners. If one already covers a gap, record the
+match and move on — a duplicate bead is not a tracking
 nit here, it is two fleet workers doing the same work twice and racing on the same files.
 
 Each new bead gets, at `create` time (bead-rs cannot edit any of this afterwards):
 
-- **A single task.** Apply `plan-to-bead`'s four tests — title needs "and"/a plural/a
-  number word; serves consumers in more than one phase; parse-vs-dispatch; can't be said
-  as one verb phrase. A vague bead invites duplicate work.
+- **One outcome owner.** Split only independently actionable deliverables or real
+  dependencies. Include the tests, documentation, verification, and delivery
+  necessary for that outcome; do not split by title grammar or implementation steps.
 - **The plan clause it restores**, by section and line.
 - **The evidence of the gap** — what you looked for and what you observed. Not "not
   implemented" but "`bead why --id` referenced in docs/plan/plan.md:412; no `why`
@@ -309,52 +332,42 @@ Each new bead gets, at `create` time (bead-rs cannot edit any of this afterwards
   pushing the artifact into git to compensate is how a repo ends up with 817MB of history.
   Name a committed path, a released tag, or a live endpoint.
 
+Write the plan clause, observed evidence, and reproducible `## Done when` check
+to a task-specific scratch file, then pass its path to the CLI:
+
 ```bash
 bead create --title "..." --issue-type task --priority 2 \
-  --label plan-gap --label human --description "$(cat <<'EOF'
-Plan: docs/plan/plan.md §4.2 (line 412) — "<the promise, quoted>"
-
-## Observed (plan-vs-built sweep 2026-08-19)
-<what was checked, what was found>
-
-## Done when
-<command> -> <expected output>
-EOF
-)"
+  --label plan-gap --label proposal-pending --label human \
+  --description-file <scratch>/gap-description.md
 ```
 
-Label them consistently (`--label plan-gap`) so the next sweep can tell which beads came
-from a gap audit, and always add `--label human` too — it's in NEEDLE's default Pluck
-exclude list, so a gap-finder's own proposals stay out of the ready frontier until a
-human admits them, rather than becoming fleet-claimable the moment they're flushed. Wire
+Label them consistently (`plan-gap`, `proposal-pending`, and `human`). Keep both hold
+labels until an explicit batch admission of exact bead IDs; creating or flushing a
+proposal does not admit it to the ready frontier. Wire
 real blocking edges where one gap genuinely prerequisites another (`bead dep add
 <BLOCKED> <BLOCKER>`), and prefer a blocker over prose — an edge is enforced, a sentence
 is not.
 
 Verdict → bead mapping: `ABSENT`/`STUB`/`PARTIAL` → build it. `UNPROVEN` → prove it (its
 own bead: add the test, wire the caller, pin the image, deploy it). `DIVERGENT` → only
-after Step 6's decision. `PLAN-STALE` → no bead; amend the plan.
+after Step 6's decision. `PLAN-STALE` → no bead; apply a plan correction only when
+that edit is within the authorized scope.
 
 ## Step 10: Flush, commit, report
 
+Run the flush and commit path only in repositories where writes were authorized and
+made. A report-only run leaves every repo and bead store unchanged.
+
 ```bash
 bead sync flush-only
-git commit .beads/checkpoint/ .beads/config.json -m "..."   # name paths; never git add -A
-
-# A flush usually writes NEW checkpoint/objects/gen-*.jsonl files. `git commit <path>`
-# commits tracked modifications only -- it silently skips untracked files, so those
-# objects stay out of git while current.json already references them, and a fresh clone
-# cannot rebuild the store. Check, then add + commit the exact paths together:
-git status --porcelain .beads          # expect EMPTY after the commit
-git add .beads/checkpoint/objects/gen-<hash>.jsonl
-git commit .beads/checkpoint/objects/gen-<hash>.jsonl -m "..."
+git status --short .beads
+# Stage and commit only the exact checkpoint/config paths changed by this run,
+# including any new checkpoint objects referenced by current.json.
 ```
 
-Nothing flushes implicitly. Stage paths **explicitly and commit them directly** — on a
-shared checkout the index is shared, so `git add` followed by a separate `git commit` is a
-race in which a sibling worker's commit swallows your staged files. When you must `git add`
-(the untracked-objects case above), pass the *same exact paths* to `git commit`, which
-bounds the commit to them regardless of what a sibling staged meanwhile.
+Inspect the index before committing, preserve unrelated staged changes, and stage
+precise paths. Pass those same paths to `git commit` so a sibling worker's staged files
+are not swept into the commit.
 `.beads/beads.db` is live SQLite and is never committed. Check `git log -1` and
 `git status --porcelain .beads` afterwards to confirm what landed.
 
@@ -402,10 +415,9 @@ Report, in this order:
   Beading phantom work is worse than missing a gap, because a fleet will actually do it.
 - **`UNPROVEN` is a real verdict, not a soft pass.** Built-but-unwired and
   built-but-untested are exactly the states that survive review and fail in production.
-- **Reopen is safe; assigned-but-open is the separate trap.** `bead reopen` clears the
-  assignee automatically (fixed 2026-08-24) — the real hazard is a bead left `open` with a
-  stale assignee through a crashed or renamed worker, invisible in `bead show`/`bead
-  doctor`; clear it with `--clear-assignee` and verify with `bead list --ready`.
+- **Report false closures before changing the graph.** Reopen or clear an assignee only
+  within an authorized scope. `bead reopen` clears the assignee automatically; a bead
+  left `open` with a stale assignee needs a separate, verified correction.
 - **Detect the bead backend, never assume it.** The wrong CLI against a store corrupts it
   rather than erroring, and the "recovery" makes it worse.
 - **Never mutate a cluster to test a hypothesis.** Read-only verbs answer every question

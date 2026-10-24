@@ -13,8 +13,10 @@
 
 ## Structure
 
+Run these snippets from the repository root, or set `REPO` to the checkout path.
+
 ```bash
-REPO="${REPO:-$HOME/jeds-curated-skills}"   # repo checkout; installed copies lag (see note)
+REPO="${REPO:-$PWD}"   # repo checkout; installed copies lag (see note)
 SKILL_DIR="$REPO/plan-author"
 ls -1 "$SKILL_DIR"                # CHECKLIST-COMPLETENESS.md, PLAN-TEMPLATE.md, SELF-TEST.md,
                                   # SKILL.md, references/, runbooks/, scripts/, subagents/
@@ -38,7 +40,7 @@ the backfill list are exercised. Any drift in the score or the MISSING list mean
 changed. Update this file deliberately, never silently.
 
 ```bash
-REPO="${REPO:-$HOME/jeds-curated-skills}"
+REPO="${REPO:-$PWD}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 cat > "$WORK/draft.md" <<'EOF'
@@ -206,7 +208,7 @@ Spike 45; a generic 39/39 score is not sufficient for any of them.
 Run `/plan-author` on a one-paragraph brief (e.g. "a CLI that watches a mailbox and files
 beads for every bounce"). Expected:
 
-- At most **three** scoping AskUserQuestions before drafting (per SKILL.md Step 1).
+- At most **three** scoping questions before drafting (per SKILL.md Step 1).
 - The draft contains all eleven categories and opens questions as numbered Open Questions
   with owners and resolve-by dates — never a bare "TBD".
 - `score-draft.sh` on the generated plan scores ≥ 90% (`Status: COMPLETE`); if lower, the

@@ -1,21 +1,15 @@
 ---
 name: plan-to-bead
 description: >-
-  Decompose a plan.md into a fully-wired bead dependency graph via the repo's own bead
-  CLI after detecting its backend -- one owner per outcome, dependencies matching
-  the plan's real technical relationships, verified for coverage, scoping and
-  dependencies with bounded review. Refuses to decompose a plan that has no plan-review
-  memo or whose memo says NOT READY; beads only the first slice and the phase after it,
-  holding later phases as single placeholders; keeps acceptance umbrellas out of the
-  autonomous frontier; splits a bead at most once; and in audit mode reports plan drift
-  since decomposition. Preserve a repository-required genesis summary
-  without using it as a substitute for concrete owners. Also runs as a standalone audit against a repo that
-  already has a full bead graph for its plan, to check and fix it without
-  creating duplicate beads. Use when the user wants to turn a plan or spec into
-  trackable, properly-scoped beads, or wants an existing bead graph checked for
-  coverage/scoping/dependency correctness against its plan.md.
-argument-hint: "[path/to/plan.md]"
-allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep, TaskCreate, TaskUpdate, TaskList, TaskGet, AskUserQuestion
+  Decompose a reviewed plan into an outcome-owned bead dependency graph after
+  detecting the repository's bead backend, or audit an existing graph against
+  its plan without creating duplicates. Require a qualifying plan-review memo;
+  decompose the first slice and next phase, hold later phases as placeholders,
+  keep acceptance umbrellas out of the autonomous frontier, and verify
+  coverage, scoping, dependencies, and plan drift with bounded review. Use when
+  the user wants to turn a plan or spec into trackable beads or check an
+  existing bead graph against its plan.
+allowed-tools: Agent, Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # Plan-to-Bead Skill
@@ -72,9 +66,10 @@ looks like a ready graph while nothing in it can actually be started.
 
 ## Step 1: Resolve the target plan.md
 
-Same resolution ladder as plan-gap-review: explicit path argument > one plan.md already in
-conversation context > exactly one `docs/plan/plan.md` under cwd > AskUserQuestion if
-ambiguous or not found. Read it in full.
+The invocation may include a plan path. Use the explicit path when given.
+Otherwise, use the plan already identified in conversation, or a single
+`docs/plan/plan.md` in the current repository. If the target remains ambiguous
+or absent, ask the user for its path. Read it in full.
 
 ## Step 2: Ground -- workspace, tool, and readiness
 
@@ -86,7 +81,8 @@ ambiguous or not found. Read it in full.
   - `.needle.yaml` with `bead_cli: backend:` states it explicitly
   - No `.beads/` at all -> greenfield, use the canonical CLI below if tracking
     initialization is within the requested scope
-- **Canonical for new workspaces is `bead` (bead-rs)** as of 2026-08-14, per CLAUDE.md;
+- **Canonical for new workspaces is `bead` (bead-rs)** as of 2026-08-14, per
+  the workspace guidance;
   `bf`/`bead-forge` and the older `br` alias are retired for active work. For a
   greenfield repo: `bead init --prefix <short-repo-prefix>` (derive the prefix from the
   repo name, never leave the default "bead"). Verify current init help first. If
@@ -94,10 +90,10 @@ ambiguous or not found. Read it in full.
   escalate only if the backend cannot be established safely.
 - **An existing store's backend wins over the canonical default.** A bf-backed repo stays
   on `bf` for this run; migrating it is separate work, never a side effect of beading.
-- **Review gate (hard).** A plan is decomposed only after `/plan-review` has judged it.
+- **Review gate (hard).** A plan is decomposed only after the `plan-review` skill has judged it.
   Find the newest memo — `docs/notes/plan-review-*.md` for a plan at `docs/plan/plan.md`,
   otherwise `<plan-dir>/<plan-basename>-review-*.md` — and read its `**Verdict:**` line:
-  - no memo → **stop**. Say so and run `/plan-review` (or `--fast` for a plan under ~150
+  - no memo → **stop**. Say so and run `plan-review` (in fast mode for a plan under ~150
     lines) first; do not draft a single bead. A plan can be fully decided, fully gated and
     still undeliverable, and only the review's caps catch that: the first slice that
     never touches the real dependency, the compound rewrite on one release train, the
@@ -120,7 +116,7 @@ ambiguous or not found. Read it in full.
   gate here; record a throughput finding on the genesis bead proposing a per-package inner
   loop, and surface it in the report.
 - Check readiness: does the plan specify enough for each phase to decompose into concrete
-  work, or are whole sections still "TBD"? If so, say so and suggest `/plan-gap-review` or
+  work, or are whole sections still "TBD"? If so, say so and suggest `plan-gap-review` or
   finishing the plan first, rather than beading vague scope -- a vague bead invites
   duplicate or conflicting work later. Proceed with independently well-defined
   authorized sections while collecting material open questions in one batch.
@@ -137,7 +133,8 @@ On bead-rs, the installed CLI is authoritative. Check `bead --help`,
 `bead create --help`, `bead manifest --help`, and the relevant subcommands.
 Current supported operations include:
 
-- `bead list --json --limit N`: JSONL, one object per line, including dependencies.
+- `bead list --json --limit N`: one JSON array, including dependencies; the
+  default limit is 100, so set `N` high enough for the whole workspace.
 - `bead show ID --json`: detailed output; inspect its actual shape before parsing.
 - `bead why --id ID`: explain blockers and readiness.
 - `bead create ... --depends-on BLOCKER`: attach an existing blocker atomically.
@@ -184,7 +181,7 @@ left claimable were plucked, verified and released in loops for weeks in the pos
 case.
 
 **Dedup is by deliverable, not by wording.** Before accepting a candidate, grep existing
-titles for the deliverable's noun phrase (`bead list --json --limit 10000 | jq -r .title
+titles for the deliverable's noun phrase (`bead list --json --limit 999999 | jq -r '.[].title'
 | grep -i '<noun phrase>'`); a near-identical open title with different verbs is a
 duplicate. A repo whose open list carries twenty variants of one ask is the failure this
 check exists for.
